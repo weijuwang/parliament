@@ -67,11 +67,6 @@ typedef struct ParlGame {
      */
     int drawDeckSize;
 
-    /**
-     * The current stage of the game
-     */
-    enum { PREGAME, MIDGAME, ENDGAME } stage;
-
     /* Derived information */
 
     /**
@@ -104,5 +99,13 @@ bool parlGame_init(ParlGame* game,
                    int numPlayers,
                    ParlPlayer myPosition,
                    ParlCardIdx myFirstCard);
+
+/**
+ * Free memory allocated for a `ParlGame`, not including the `ParlGame` struct itself.
+ *
+ * If you dynamically allocated memory to store the `ParlGame` itself, you must `free` it separately.
+ * @param game
+ */
+void parlGame_free(const ParlGame* game);
 
 #endif //PARLIAMENT_GAME_H
