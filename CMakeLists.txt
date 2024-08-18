@@ -5,4 +5,6 @@ set(CMAKE_C_STANDARD 11)
 
 add_executable(parliament main.c
         cards.c
-        cards.h)
+        cards.h
+        game.c
+        game.h)

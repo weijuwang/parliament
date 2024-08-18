@@ -10,7 +10,7 @@ const ParlCardSymbol PARL_JOKER_SYMBOL = "zz";
 
 const char PARL_SUIT_SYMBOLS[5] = "cshdj";
 
-ParlRank parlRank(ParlCardIdx idx)
+ParlRank parlRank(const ParlCardIdx idx)
 {
     if(PARL_IS_JOKER(idx))
         return PARL_JOKER_RANK;
@@ -18,7 +18,29 @@ ParlRank parlRank(ParlCardIdx idx)
         return idx % PARL_NUM_RANKS;
 }
 
-bool parlCardSymbol(ParlCardSymbol out, ParlCardIdx idx)
+int parlStackSize(const ParlStack s)
+{
+    int numNonJokers = 0;
+
+    for(int i = 0; i < PARL_JOKER_IDX; ++i)
+        if(PARL_STACK_CONTAINS(s, i))
+            ++numNonJokers;
+
+    return numNonJokers + (int)PARL_NUM_JOKERS(s);
+}
+
+bool parlMoveCard(ParlStack* const dest, ParlStack* const orig, const ParlCardIdx idx)
+{
+    if(!PARL_STACK_CONTAINS(*orig, idx))
+        return false;
+
+    *orig -= PARL_CARD(idx);
+    *dest += PARL_CARD(idx);
+
+    return true;
+}
+
+bool parlCardSymbol(ParlCardSymbol out, const ParlCardIdx idx)
 {
     ParlRank r = parlRank(idx);
 
@@ -47,7 +69,7 @@ bool parlCardSymbol(ParlCardSymbol out, ParlCardIdx idx)
     } else return false;
 }
 
-ParlCardIdx parlCardIdx(ParlCardSymbol symbol)
+ParlCardIdx parlCardIdx(const ParlCardSymbol symbol)
 {
     ParlRank rank;
     ParlSuit suit = PARL_PARSE_ERROR;

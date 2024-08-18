@@ -1,8 +1,15 @@
 #include <stdio.h>
-#include "cards.h"
+#include "game.h"
 
 int main(void)
 {
-    printf("Hello, World!\n");
+    ParlGame g;
+    parlGame_init(&g,
+                  2,
+                  3,
+                  1,
+                  parlCardIdx("3h")
+                  );
+    printf("%i\n", parlStackSize(g.faceDownCards));
     return 0;
 }
