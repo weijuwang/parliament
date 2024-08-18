@@ -23,19 +23,19 @@ int parlStackSize(const ParlStack s)
     int numNonJokers = 0;
 
     for(int i = 0; i < PARL_JOKER_IDX; ++i)
-        if(PARL_STACK_CONTAINS(s, i))
+        if(PARL_STACK_CONTAINS(s, PARL_CARD(i)))
             ++numNonJokers;
 
     return numNonJokers + (int)PARL_NUM_JOKERS(s);
 }
 
-bool parlMoveCard(ParlStack* const dest, ParlStack* const orig, const ParlCardIdx idx)
+bool parlMoveCard(ParlStack* const dest, ParlStack* const orig, const ParlStack cards)
 {
-    if(!PARL_STACK_CONTAINS(*orig, idx))
+    if(!PARL_STACK_CONTAINS(*orig, cards))
         return false;
 
-    *orig -= PARL_CARD(idx);
-    *dest += PARL_CARD(idx);
+    *orig -= PARL_CARD(cards);
+    *dest += PARL_CARD(cards);
 
     return true;
 }

@@ -15,6 +15,8 @@
  */
 #define PARL_JOKER_IDX 52
 
+#define PARL_JOKER_CARD (PARL_CARD(PARL_JOKER_IDX))
+
 #define PARL_NUM_RANKS 13
 #define PARL_ACE_RANK 0
 #define PARL_JACK_RANK 10
@@ -38,7 +40,7 @@
 /**
  * Returns a complete deck without jokers.
  */
-#define PARL_COMPLETE_STACK_NO_JOKERS (PARL_CARD(PARL_JOKER_IDX) - 1)
+#define PARL_COMPLETE_STACK_NO_JOKERS (PARL_JOKER_CARD - 1)
 
 /**
  * Returns the stack only containing the card of the given index.
@@ -61,9 +63,13 @@
 #define PARL_HIGHER_THAN(i0, i1) (parlRank(i0) > parlRank(i1))
 
 /**
- * Returns whether a stack contains a card of a given index.
+ * Returns whether s0 contains the entirety of s1.
  */
-#define PARL_STACK_CONTAINS(s, idx) (s & PARL_CARD(idx))
+#define PARL_STACK_CONTAINS(s0, s1) ( \
+    ( /* Excluding jokers, s0 and s1 share at least one card, or s1 is empty */ \
+        (s0 & s1 & PARL_COMPLETE_STACK_NO_JOKERS) \
+        || !(s1 & PARL_COMPLETE_STACK_NO_JOKERS) \
+    ) && PARL_NUM_JOKERS(s0) >= PARL_NUM_JOKERS(s1))
 
 /**
  * Returns the number of jokers in a stack.
@@ -139,16 +145,16 @@ ParlRank parlRank(ParlCardIdx idx);
 int parlStackSize(ParlStack s);
 
 /**
- * Moves a card from `dest` to `orig` only if the card already exists in `orig`.
+ * Moves `card` from `dest` to `orig` only if the cards already exist in `orig`.
  *
  * Assumes the card doesn't already exist in `dest`, which would mean something's gone terribly wrong.
  *
  * @param dest
  * @param orig
- * @param idx
+ * @param cards
  * @return `true` if the card `idx` existed in `orig` and thus the move was executed.
  */
-bool parlMoveCard(ParlStack* dest, ParlStack* orig, ParlCardIdx idx);
+bool parlMoveCard(ParlStack* dest, ParlStack* orig, ParlStack cards);
 
 /**
  * Writes the symbol of card `idx` to `out`.
