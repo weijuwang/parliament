@@ -44,23 +44,45 @@ typedef enum {
     APPOINT_MP,
 
     /**
-     * Used both for calling and opposing elections depending on the mode.
-     * Activates ELECTION mode when called in NORMAL mode.
-     *
      * In NORMAL mode: legal if the player has at least three cards in their hand. If it's the known player's turn,
-     * they must also have three cards in their hand of the same suit.
+     * they must also have three cards in their hand of the same suit. Activates ELECTION mode.
      */
     ENTER_ELECTION,
 
     /**
-     * Used both for impeaching and blocking MPs depending on the mode.
-     * Activates IMPEACH mode when called in NORMAL mode.
+     * In NORMAL mode: legal if the player has at least one card in their hand of higher rank than at least one MP.
+     * Activates IMPEACH mode.
      */
     IMPEACH_MP,
+
+    /**
+     * In NORMAL mode: legal if there is a PM and the player has at least one card in their hand. If it's the known
+     * player's turn, they must also have either a) a king if the PM card is a king, or b) a card higher than the PM.
+     * If Cabinet had at least 2 cards before this was played, REPLACE_PM mode is activated.
+     */
     IMPEACH_PM,
+
+    /**
+     *
+     */
     VOTE_NO_CONF,
+
+    /**
+     * In NORMAL mode: legal if the player is the PM, Cabinet isn't empty, and Parliament isn't empty.
+     */
     CABINET_RESHUFFLE,
+
+    /**
+     * In NORMAL mode: legal if the player is the PM and Cabinet isn't empty.
+     */
     APPOINT_PM,
+
+    BLOCK_IMPEACH,
+
+    REIMPEACH,
+
+    CONTEST_ELECTION,
+
     PASS
 } ParlAction;
 

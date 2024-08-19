@@ -24,9 +24,11 @@ bool parlGame_init(ParlGame* const g,
     g->drawDeckSize = PARL_JOKER_IDX + numJokers;
     g->mode = NORMAL;
 
-    g->handSizes = calloc(numPlayers, sizeof(int));
+    g->handSizes = malloc(numPlayers * sizeof(int));
     g->knownHands = calloc(numPlayers, sizeof(ParlStack));
 
+    for(int i = 0; i < numPlayers; ++i)
+        g->handSizes[i] = 1;
     g->knownHands[g->myPosition] = myFirstCard;
 
     g->faceDownCards = numJokers * PARL_JOKER_CARD
@@ -54,7 +56,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
             const register int parlSize = parlStackSize(g->parliament);
             const register bool myTurn = PARL_MY_TURN(g);
             const register bool iAmPm = g->turn == g->pmPosition;
-            const register ParlStack myHand = g->knownHands[g->turn];
+            const register ParlStack playerHand = g->knownHands[g->turn];
 
             // PM-exclusive actions
             if(iAmPm && parlStackSize(g->cabinet))
@@ -66,7 +68,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
 
             // All actions below here require a non-empty hand
             if(!handSize)
-                break;
+                return legalMoves;
 
             PARL_ADD_LEGAL_MOVE(DISCARD);
 
@@ -81,7 +83,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                 if(myTurn)
                 {
                     PARL_FOREACH_SUIT(s)
-                        if (parlStackSize(PARL_STACK_FILTER_SUIT(myHand, s)) >= 3)
+                        if (parlStackSize(PARL_STACK_FILTER_SUIT(playerHand, s)) >= 3)
                             goto electionLegal;
 
                     electionLegal = false;
@@ -93,7 +95,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                         numCards = 0;
 
                         PARL_FOREACH_SUIT(s)
-                            if(PARL_STACK_CONTAINS(myHand, PARL_RS_TO_CARD(r, s)))
+                            if(PARL_STACK_CONTAINS(playerHand, PARL_RS_TO_CARD(r, s)))
                                 ++numCards;
 
                         if(numCards >= 3)
@@ -118,14 +120,14 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                     if(pmCardRank == PARL_KING_RANK)
                     {
                         PARL_FOREACH_SUIT(s)
-                            if(PARL_STACK_CONTAINS(myHand, PARL_RS_TO_CARD(PARL_KING_RANK, s)))
+                            if(PARL_STACK_CONTAINS(playerHand, PARL_RS_TO_CARD(PARL_KING_RANK, s)))
                                 goto impeachPmLegal;
                     }
                     else
                     {
                         PARL_FOREACH_RANK_FROM(r, pmCardRank + 1)
                             PARL_FOREACH_SUIT(s)
-                                if(PARL_STACK_CONTAINS(myHand, PARL_RS_TO_CARD(r, s)))
+                                if(PARL_STACK_CONTAINS(playerHand, PARL_RS_TO_CARD(r, s)))
                                     goto impeachPmLegal;
                     }
 
@@ -136,16 +138,20 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                 impeachPmIllegal:;
             }
 
-            if(myTurn)
+            if(handSize > 0 && parlSize)
             {
-                PARL_FOREACH_IN_STACK(g->parliament, mp)
-                    PARL_FOREACH_IN_STACK(myHand, h)
-                        if(PARL_HIGHER_THAN(h, mp))
-                            goto impeachMpLegal;
-                goto impeachMpIllegal;
+                if(myTurn)
+                {
+                    PARL_FOREACH_IN_STACK(g->parliament, mp)
+                        PARL_FOREACH_IN_STACK(playerHand, h)
+                            if(PARL_HIGHER_THAN(h, mp))
+                                    goto impeachMpLegal;
+                    goto impeachMpIllegal;
+                }
+                impeachMpLegal:
+                PARL_ADD_LEGAL_MOVE(IMPEACH_MP);
+                impeachMpIllegal:;
             }
-            impeachMpLegal: PARL_ADD_LEGAL_MOVE(IMPEACH_MP);
-            impeachMpIllegal:;
 
             return legalMoves;
         case DISCARD_AFTER_DRAW:
@@ -157,6 +163,4 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
         case BACKUP_PM:
             return 1l<<APPOINT_PM;
     }
-
-    return 0;
 }

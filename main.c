@@ -10,7 +10,7 @@ int main(void)
                   1,
                   parlCardIdx("3h")
                   );
-    printf("%i\n", PARL_STACK_CONTAINS(g.faceDownCards, PARL_JOKER_CARD));
+    printf("%i\n", parlGame_legalActions(&g));
     parlGame_free(&g);
     return 0;
 }
