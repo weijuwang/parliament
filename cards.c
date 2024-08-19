@@ -10,7 +10,7 @@ const ParlCardSymbol PARL_JOKER_SYMBOL = "zz";
 
 const char PARL_SUIT_SYMBOLS[5] = "cshdj";
 
-ParlRank parlRank(const ParlCardIdx idx)
+ParlRank parlRank(const ParlIdx idx)
 {
     if(PARL_IS_JOKER(idx))
         return PARL_JOKER_RANK;
@@ -20,16 +20,16 @@ ParlRank parlRank(const ParlCardIdx idx)
 
 int parlStackSize(const ParlStack s)
 {
-    int numNonJokers = 0;
+    register int numNonJokers = 0;
 
-    for(int i = 0; i < PARL_JOKER_IDX; ++i)
+    PARL_FOREACH_IDX(i)
         if(PARL_STACK_CONTAINS(s, PARL_CARD(i)))
             ++numNonJokers;
 
     return numNonJokers + (int)PARL_NUM_JOKERS(s);
 }
 
-bool parlMoveCard(ParlStack* const dest, ParlStack* const orig, const ParlStack cards)
+bool parlMoveCards(ParlStack* const dest, ParlStack* const orig, const ParlStack cards)
 {
     if(!PARL_STACK_CONTAINS(*orig, cards))
         return false;
@@ -40,12 +40,13 @@ bool parlMoveCard(ParlStack* const dest, ParlStack* const orig, const ParlStack 
     return true;
 }
 
-bool parlCardSymbol(ParlCardSymbol out, const ParlCardIdx idx)
+bool parlCardSymbol(ParlCardSymbol out, const ParlIdx idx)
 {
     ParlRank r = parlRank(idx);
 
-    if(idx < PARL_JOKER_IDX && idx >= 0) {
-        // Non-joker card
+    // Non-joker card
+    if(idx < PARL_JOKER_IDX && idx >= 0)
+    {
         switch(r)
         {
 #define PARLIAMENT_CARDS_SPECIAL_RANK_OUTPUT(rank) \
@@ -62,14 +63,16 @@ bool parlCardSymbol(ParlCardSymbol out, const ParlCardIdx idx)
 
         out[1] = PARL_SUIT_SYMBOLS[PARL_SUIT(idx)];
         return true;
-    } else if (PARL_IS_JOKER(idx)) {
+    }
+    else if(PARL_IS_JOKER(idx))
+    {
         // memcpy instead of strcpy or related functions b/c no null terminator
         memcpy(out, PARL_JOKER_SYMBOL, 2);
         return true;
     } else return false;
 }
 
-ParlCardIdx parlCardIdx(const ParlCardSymbol symbol)
+ParlIdx parlCardIdx(const ParlCardSymbol symbol)
 {
     ParlRank rank;
     ParlSuit suit = PARL_PARSE_ERROR;
@@ -93,17 +96,15 @@ ParlCardIdx parlCardIdx(const ParlCardSymbol symbol)
     }
 
     /* Parse suit */
-    for(int i = 0; i < sizeof PARL_SUIT_SYMBOLS; ++i)
-    {
+    for(register int i = 0; i < sizeof PARL_SUIT_SYMBOLS; ++i)
         if(PARL_SUIT_SYMBOLS[i] == symbol[1])
         {
             suit = i;
             break;
         }
-    }
 
     if(rank < 0 || suit < 0)
         return PARL_PARSE_ERROR;
     else
-        return suit * PARL_NUM_RANKS + rank;
+        return PARL_RS_TO_IDX(rank, suit);
 }

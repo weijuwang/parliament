@@ -17,7 +17,9 @@
 
 #define PARL_JOKER_CARD (PARL_CARD(PARL_JOKER_IDX))
 
+#define PARL_NUM_SUITS PARL_JOKER_SUIT
 #define PARL_NUM_RANKS 13
+
 #define PARL_ACE_RANK 0
 #define PARL_JACK_RANK 10
 #define PARL_QUEEN_RANK 11
@@ -30,12 +32,12 @@
 #define PARL_QUEEN_SYMBOL 'q'
 #define PARL_KING_SYMBOL 'k'
 
-#define PARL_PARSE_ERROR -1
+#define PARL_PARSE_ERROR (-1)
 
 /**
  * Returns a stack of empty cards.
  */
-#define PARL_EMPTY_STACK 0ul
+#define PARL_EMPTY_STACK 0ull
 
 /**
  * Returns a complete deck without jokers.
@@ -45,17 +47,27 @@
 /**
  * Returns the stack only containing the card of the given index.
  */
-#define PARL_CARD(i) (1ul << i)
+#define PARL_CARD(i) (1ull << (i))
+
+/**
+ * Returns a card index given a card's rank and suit.
+ */
+#define PARL_RS_TO_IDX(r, s) ((s) * PARL_NUM_RANKS + (r))
+
+/**
+ * Returns a card given a card's rank and suit.
+ */
+#define PARL_RS_TO_CARD(r, s) (PARL_CARD(PARL_RS_TO_IDX((r), (s))))
 
 /**
  * Obtains a card's suit from its index.
  */
-#define PARL_SUIT(i) (i / PARL_NUM_RANKS)
+#define PARL_SUIT(i) ((i) / PARL_NUM_RANKS)
 
 /**
  * Returns whether the card of the given index is a joker.
  */
-#define PARL_IS_JOKER(i) (i >= PARL_JOKER_IDX)
+#define PARL_IS_JOKER(i) ((i) >= PARL_JOKER_IDX)
 
 /**
  * Returns whether i0 is of a higher rank than i1.
@@ -67,24 +79,55 @@
  */
 #define PARL_STACK_CONTAINS(s0, s1) ( \
     ( /* Excluding jokers, s0 and s1 share at least one card, or s1 is empty */ \
-        (s0 & s1 & PARL_COMPLETE_STACK_NO_JOKERS) \
-        || !(s1 & PARL_COMPLETE_STACK_NO_JOKERS) \
+        ((s0) & (s1) & PARL_COMPLETE_STACK_NO_JOKERS) \
+        || !((s1) & PARL_COMPLETE_STACK_NO_JOKERS) \
     ) && PARL_NUM_JOKERS(s0) >= PARL_NUM_JOKERS(s1))
+
+/**
+ * Filter a stack to only cards of a given suit.
+ */
+#define PARL_STACK_FILTER_SUIT(s, suit) ((s) & (PARL_CARD(suit + 1) - PARL_CARD(suit)))
 
 /**
  * Returns the number of jokers in a stack.
  */
-#define PARL_NUM_JOKERS(s) (s >> PARL_JOKER_IDX)
+#define PARL_NUM_JOKERS(s) ((s) >> PARL_JOKER_IDX)
 
+/**
+ * Iterates through all 4 suits, not including the joker suit.
+ */
+#define PARL_FOREACH_SUIT(s) for(register ParlSuit s = 0; s < PARL_NUM_SUITS; ++s)
+
+/**
+ * Iterates through all ranks starting from the given rank, not including the joker rank.
+ */
+#define PARL_FOREACH_RANK_FROM(r, start) for(register ParlRank r = start; r < PARL_NUM_RANKS; ++r)
+
+/**
+ * Iterates through all 13 ranks, not including the joker rank.
+ */
+#define PARL_FOREACH_RANK(r) PARL_FOREACH_RANK_FROM(r, 0)
+
+/**
+ * Iterates through all 52 non-joker card indices.
+ */
+#define PARL_FOREACH_IDX(i) for(register ParlIdx i = 0; i < PARL_JOKER_IDX; ++i)
+
+/**
+ * Iterates through all indices of all cards in the stack `s`.
+ */
+#define PARL_FOREACH_IN_STACK(s, i) \
+    PARL_FOREACH_IDX(i) \
+        if(PARL_STACK_CONTAINS((s), PARL_CARD(i)))
 /**
  * An integer that uniquely identifies a card.
  *
- * More precisely, each `ParlCardIdx` is the position of a bit flag in a `ParlStack` that indicates whether the card is
+ * More precisely, each `ParlIdx` is the position of a bit flag in a `ParlStack` that indicates whether the card is
  * in the stack.
  *
- * Jokers are complicated; see `PARL_JOKER_IDX`. Any `ParlCardIdx` higher than 52 is treated as a joker for simplicity.
+ * Jokers are complicated; see `PARL_JOKER_IDX`. Any `ParlIdx` higher than 52 is treated as a joker for simplicity.
  */
-typedef int ParlCardIdx;
+typedef int ParlIdx;
 
 /**
  * A sequence of two alphanumeric characters that uniquely identify each card.
@@ -112,14 +155,12 @@ typedef int ParlRank;
 typedef uint64_t ParlStack;
 
 /**
- * The suit of a `ParlCardIdx`.
+ * The suit of a `ParlIdx`.
  */
 typedef enum {
-    CLUBS = 0,
-    SPADES = 1,
-    HEARTS = 2,
-    DIAMONDS = 3,
-    PARL_JOKER_SUIT = 4,
+    CLUBS, SPADES,
+    HEARTS, DIAMONDS,
+    PARL_JOKER_SUIT,
 
     /**
      * This serves to indicate to the compiler that this enum type must be signed.
@@ -136,7 +177,7 @@ const ParlCardSymbol PARL_JOKER_SYMBOL;
  * @param idx
  * @return The rank of card `idx`.
  */
-ParlRank parlRank(ParlCardIdx idx);
+ParlRank parlRank(ParlIdx idx);
 
 /**
  * @param s
@@ -154,7 +195,7 @@ int parlStackSize(ParlStack s);
  * @param cards
  * @return `true` if the card `idx` existed in `orig` and thus the move was executed.
  */
-bool parlMoveCard(ParlStack* dest, ParlStack* orig, ParlStack cards);
+bool parlMoveCards(ParlStack* dest, ParlStack* orig, ParlStack cards);
 
 /**
  * Writes the symbol of card `idx` to `out`.
@@ -162,12 +203,12 @@ bool parlMoveCard(ParlStack* dest, ParlStack* orig, ParlStack cards);
  * @param idx
  * @return `true` if `idx` was a valid card.
  */
-bool parlCardSymbol(ParlCardSymbol out, ParlCardIdx idx);
+bool parlCardSymbol(ParlCardSymbol out, ParlIdx idx);
 
 /**
  * @param symbol
- * @return Returns the `ParlCardIdx` corresponding to `symbol`, or `PARL_PARSE_ERROR` if `symbol` is not a valid card symbol.
+ * @return Returns the `ParlIdx` corresponding to `symbol`, or `PARL_PARSE_ERROR` if `symbol` is not a valid card symbol.
  */
-ParlCardIdx parlCardIdx(const ParlCardSymbol symbol);
+ParlIdx parlCardIdx(const ParlCardSymbol symbol);
 
 #endif //PARLIAMENT_CARDS_H
