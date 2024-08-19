@@ -5,6 +5,7 @@
 #include "game.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 bool parlGame_init(ParlGame* const g,
                    const int numJokers,
@@ -42,6 +43,24 @@ void parlGame_free(const ParlGame* const g)
 {
     free(g->handSizes);
     free(g->knownHands);
+}
+
+bool parlGame_deepCopy(ParlGame* const dest, const ParlGame* const orig)
+{
+    const register unsigned int HAND_SIZES_SIZE = orig->numPlayers * sizeof(int);
+    const register unsigned int KNOWN_HANDS_SIZE = dest->numPlayers * sizeof(ParlStack);
+
+    memcpy(dest, orig, sizeof(ParlGame));
+
+    if(!(dest->handSizes = malloc(HAND_SIZES_SIZE)))
+        return false;
+    if(!(dest->knownHands = malloc(KNOWN_HANDS_SIZE)))
+        return false;
+
+    memcpy(dest->handSizes, orig->handSizes, HAND_SIZES_SIZE);
+    memcpy(dest->knownHands, orig->knownHands, KNOWN_HANDS_SIZE);
+
+    return true;
 }
 
 unsigned int parlGame_legalActions(const ParlGame* const g)

@@ -3,14 +3,16 @@
 
 int main(void)
 {
-    ParlGame g;
+    ParlGame g, h;
     parlGame_init(&g,
                   2,
                   3,
                   1,
                   parlCardIdx("3h")
                   );
-    printf("%i\n", parlGame_legalActions(&g));
+    parlGame_deepCopy(&h, &g);
+    printf("%i\n", parlGame_legalActions(&h));
     parlGame_free(&g);
+    parlGame_free(&h);
     return 0;
 }

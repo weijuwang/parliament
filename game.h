@@ -197,11 +197,6 @@ typedef struct ParlGame {
              * The card to beat in the stack.
              */
             ParlIdx cardToBeat;
-
-            /**
-             * Whether the next action will be a block or another impeachment attempt.
-             */
-            bool awaitingBlock;
         } impeach;
 
         /**
@@ -237,6 +232,14 @@ bool parlGame_init(ParlGame* g,
  * @param g
  */
 void parlGame_free(const ParlGame* g);
+
+/**
+ * Deep-copies a ParlGame from `orig` to `dest`.
+ * @param dest
+ * @param orig
+ * @return Whether the initialization was successful.
+ */
+bool parlGame_deepCopy(ParlGame* dest, const ParlGame* orig);
 
 /**
  * @param g
