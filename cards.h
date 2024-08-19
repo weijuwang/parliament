@@ -2,6 +2,24 @@
 // Created by Weiju Wang on 8/17/24.
 //
 
+/**
+ * @file
+ * @brief An API for performing operations on/with stacks of cards in games where all jokers are considered equivalent.
+ *
+ * @details
+ * This API is extremely fast compared to many other card libraries because it stores each deck of cards as a single
+ * 64-bit integer. This means there is no dynamic memory allocation anywhere in this API and all operations are bitwise
+ * or arithmetic.
+ *
+ * Internally, this is implemented by treating each card in a stack of cards (ParlStack = uint_64) as a flag that can be
+ * set to indicate the card exists in the stack. The 52 rightmost bits in the integer indicate the status of the 52
+ * non-joker cards. The number of jokers in the card can be obtained with PARL_NUM_JOKERS(), which simply right-shifts
+ * the 52 non-joker bits away. Jokers have to be implemented like this because they are not unique. This API would be
+ * much faster if the different jokers were considered to be different cards.
+ *
+ * TODO I haven't bothered to explain how to use any of the code in here -- would be helpful
+ */
+
 #ifndef PARLIAMENT_CARDS_H
 #define PARLIAMENT_CARDS_H
 
@@ -17,8 +35,9 @@
 
 #define PARL_JOKER_CARD (PARL_CARD(PARL_JOKER_IDX))
 
+#define PARL_NUM_NON_JOKER_CARDS PARL_JOKER_IDX
 #define PARL_NUM_SUITS PARL_JOKER_SUIT
-#define PARL_NUM_RANKS 13
+#define PARL_NUM_RANKS PARL_JOKER_RANK
 
 #define PARL_ACE_RANK 0
 #define PARL_JACK_RANK 10
@@ -60,6 +79,11 @@
 #define PARL_RS_TO_CARD(r, s) (PARL_CARD(PARL_RS_TO_IDX((r), (s))))
 
 /**
+ * Obtains a card's rank from its index.
+ */
+#define PARL_RANK(i) (PARL_IS_JOKER(i) ? PARL_JOKER_RANK : i % PARL_NUM_RANKS)
+
+/**
  * Obtains a card's suit from its index.
  */
 #define PARL_SUIT(i) ((i) / PARL_NUM_RANKS)
@@ -72,21 +96,26 @@
 /**
  * Returns whether i0 is of a higher rank than i1.
  */
-#define PARL_HIGHER_THAN(i0, i1) (parlRank(i0) > parlRank(i1))
+#define PARL_HIGHER_THAN(i0, i1) (PARL_RANK(i0) > PARL_RANK(i1))
+
+/**
+ * Returns a stack with no jokers.
+ */
+#define PARL_WITHOUT_JOKERS(s) ((s) & PARL_COMPLETE_STACK_NO_JOKERS)
 
 /**
  * Returns whether s0 contains the entirety of s1.
  */
-#define PARL_STACK_CONTAINS(s0, s1) ( \
+#define PARL_CONTAINS(s0, s1) ( \
     ( /* Excluding jokers, s0 and s1 share at least one card, or s1 is empty */ \
-        ((s0) & (s1) & PARL_COMPLETE_STACK_NO_JOKERS) \
-        || !((s1) & PARL_COMPLETE_STACK_NO_JOKERS) \
+        PARL_WITHOUT_JOKERS((s0) & (s1)) \
+        || !PARL_WITHOUT_JOKERS(s1) \
     ) && PARL_NUM_JOKERS(s0) >= PARL_NUM_JOKERS(s1))
 
 /**
  * Filter a stack to only cards of a given suit.
  */
-#define PARL_STACK_FILTER_SUIT(s, suit) ((s) & (PARL_CARD(suit + 1) - PARL_CARD(suit)))
+#define PARL_FILTER_SUIT(s, suit) ((s) & (PARL_CARD(suit + 1) - PARL_CARD(suit)))
 
 /**
  * Returns the number of jokers in a stack.
@@ -111,14 +140,14 @@
 /**
  * Iterates through all 52 non-joker card indices.
  */
-#define PARL_FOREACH_IDX(i) for(register ParlIdx i = 0; i < PARL_JOKER_IDX; ++i)
+#define PARL_FOREACH_IDX(i) for(register ParlIdx i = 0; i < PARL_NUM_NON_JOKER_CARDS; ++i)
 
 /**
  * Iterates through all indices of all cards in the stack `s`.
  */
 #define PARL_FOREACH_IN_STACK(s, i) \
     PARL_FOREACH_IDX(i) \
-        if(PARL_STACK_CONTAINS((s), PARL_CARD(i)))
+        if(PARL_CONTAINS((s), PARL_CARD(i)))
 /**
  * An integer that uniquely identifies a card.
  *
@@ -174,19 +203,28 @@ typedef enum {
 const ParlCardSymbol PARL_JOKER_SYMBOL;
 
 /**
- * @param idx
- * @return The rank of card `idx`.
- */
-ParlRank parlRank(ParlIdx idx);
-
-/**
  * @param s
  * @return The number of cards in the stack `s`.
  */
 int parlStackSize(ParlStack s);
 
 /**
- * Moves `card` from `dest` to `orig` only if the cards already exist in `orig`.
+ * Removes `cards` from `orig` only if the cards all exist in `orig`.
+ * @param orig
+ * @param cards
+ * @return Whether the operation was successful.
+ */
+bool parlRemoveCards(ParlStack* orig, ParlStack cards);
+
+/**
+ * Removes all `cards` from `orig` that exist in `orig`. Assumes `*orig` has at least as many jokers as `cards`.
+ * @param orig
+ * @param cards
+ */
+void parlRemoveCardsPartial(ParlStack* orig, ParlStack cards);
+
+/**
+ * Moves `cards` from `dest` to `orig` only if the cards already exist in `orig`.
  *
  * Assumes the card doesn't already exist in `dest`, which would mean something's gone terribly wrong.
  *
@@ -209,6 +247,6 @@ bool parlCardSymbol(ParlCardSymbol out, ParlIdx idx);
  * @param symbol
  * @return Returns the `ParlIdx` corresponding to `symbol`, or `PARL_PARSE_ERROR` if `symbol` is not a valid card symbol.
  */
-ParlIdx parlCardIdx(const ParlCardSymbol symbol);
+ParlIdx parlSymbolToIdx(const ParlCardSymbol symbol);
 
 #endif //PARLIAMENT_CARDS_H

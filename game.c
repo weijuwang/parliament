@@ -7,22 +7,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define DECREASE_HAND_SIZE(n) g->handSizes[g->turn] -= n
+
 bool parlGame_init(ParlGame* const g,
                    const int numJokers,
                    const int numPlayers,
                    const ParlPlayer myPosition,
-                   const ParlIdx myFirstCard)
+                   const ParlIdx myFirstCardIdx)
 {
     g->numPlayers = numPlayers;
     g->myPosition = myPosition;
 
     g->pmPosition = PARL_NO_PM;
-    g->pmCard = PARL_NO_PM;
+    g->pmCardIdx = PARL_NO_PM;
     g->cabinet = PARL_EMPTY_STACK;
 
     g->turn = 0;
     g->parliament = PARL_EMPTY_STACK;
-    g->drawDeckSize = PARL_JOKER_IDX + numJokers;
+    g->discard = PARL_EMPTY_STACK;
+    g->drawDeckSize = PARL_NUM_NON_JOKER_CARDS + numJokers;
     g->mode = NORMAL;
 
     g->handSizes = malloc(numPlayers * sizeof(int));
@@ -30,10 +33,11 @@ bool parlGame_init(ParlGame* const g,
 
     for(int i = 0; i < numPlayers; ++i)
         g->handSizes[i] = 1;
-    g->knownHands[g->myPosition] = myFirstCard;
+    g->knownHands[g->myPosition] = PARL_CARD(myFirstCardIdx);
 
     g->faceDownCards = numJokers * PARL_JOKER_CARD
-                       + PARL_COMPLETE_STACK_NO_JOKERS;
+                       + PARL_COMPLETE_STACK_NO_JOKERS
+                       - PARL_CARD(myFirstCardIdx);
 
     // Memory allocation errors will set one of these to null.
     return g->handSizes && g->knownHands;
@@ -102,7 +106,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                 if(myTurn)
                 {
                     PARL_FOREACH_SUIT(s)
-                        if (parlStackSize(PARL_STACK_FILTER_SUIT(playerHand, s)) >= 3)
+                        if (parlStackSize(PARL_FILTER_SUIT(playerHand, s)) >= 3)
                             goto electionLegal;
 
                     electionLegal = false;
@@ -114,7 +118,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                         numCards = 0;
 
                         PARL_FOREACH_SUIT(s)
-                            if(PARL_STACK_CONTAINS(playerHand, PARL_RS_TO_CARD(r, s)))
+                            if(PARL_CONTAINS(playerHand, PARL_RS_TO_CARD(r, s)))
                                 ++numCards;
 
                         if(numCards >= 3)
@@ -133,20 +137,20 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
             {
                 if(myTurn)
                 {
-                    const register ParlRank pmCardRank = parlRank(g->pmCard);
+                    const register ParlRank pmCardRank = PARL_RANK(g->pmCardIdx);
 
                     // Kings can impeach kings
                     if(pmCardRank == PARL_KING_RANK)
                     {
                         PARL_FOREACH_SUIT(s)
-                            if(PARL_STACK_CONTAINS(playerHand, PARL_RS_TO_CARD(PARL_KING_RANK, s)))
+                            if(PARL_CONTAINS(playerHand, PARL_RS_TO_CARD(PARL_KING_RANK, s)))
                                 goto impeachPmLegal;
                     }
                     else
                     {
                         PARL_FOREACH_RANK_FROM(r, pmCardRank + 1)
                             PARL_FOREACH_SUIT(s)
-                                if(PARL_STACK_CONTAINS(playerHand, PARL_RS_TO_CARD(r, s)))
+                                if(PARL_CONTAINS(playerHand, PARL_RS_TO_CARD(r, s)))
                                     goto impeachPmLegal;
                     }
 
@@ -164,7 +168,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                     PARL_FOREACH_IN_STACK(g->parliament, mp)
                         PARL_FOREACH_IN_STACK(playerHand, h)
                             if(PARL_HIGHER_THAN(h, mp))
-                                    goto impeachMpLegal;
+                                goto impeachMpLegal;
                     goto impeachMpIllegal;
                 }
                 impeachMpLegal:
@@ -176,10 +180,157 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
         case DISCARD_AFTER_DRAW:
             return 1l<<DISCARD;
         case IMPEACH:
-            return (1l<<IMPEACH_MP) + (1l<<PASS);
+            return (1l<<REIMPEACH) + (1l<<ALLOW_IMPEACH);
         case ELECTION:
-            return (1l<<ENTER_ELECTION) + (1l<<PASS);
+            return (1l<<CONTEST_ELECTION) + (1l<<NO_CONTEST_ELECTION);
         case BACKUP_PM:
             return 1l<<APPOINT_PM;
     }
+}
+
+void parlGame_removeFromHand(ParlGame* g, ParlStack s)
+{
+    DECREASE_HAND_SIZE(parlStackSize(s));
+    parlRemoveCardsPartial(&g->knownHands[g->turn], s);
+    if(g->turn != g->myPosition)
+        parlRemoveCardsPartial(&g->faceDownCards, s);
+}
+
+bool parlGame_applyAction(ParlGame* g,
+                          ParlAction a,
+                          ParlIdx idxA,
+                          ParlIdx idxB,
+                          ParlIdx idxC
+                          )
+{
+    register bool myTurn = g->turn == g->myPosition;
+    register ParlStack cardA = PARL_CARD(idxA),
+        cardB = PARL_CARD(idxB),
+        cardC = PARL_CARD(idxC);
+
+    switch(a)
+    {
+        case DRAW:
+            if(myTurn && !parlMoveCards(
+                &(g->knownHands[g->turn]),
+                &g->faceDownCards,
+                cardA
+            ))
+                // The card that was drawn is already face-up or known to be in someone's hand
+                return false;
+            DECREASE_HAND_SIZE(-1);
+            goto incTurn;
+
+        case IMPEACH_PM:
+            g->discard += PARL_CARD(g->pmCardIdx);
+            g->pmCardIdx = idxA;
+            // Missing `break` statement is intentional
+        case DISCARD:
+            if(
+                !parlMoveCards(
+                    &g->discard,
+                    &(g->knownHands[g->turn]),
+                    cardA
+                )
+                && !parlMoveCards(
+                    &g->discard,
+                    &g->faceDownCards,
+                    cardA
+                )
+            )
+                return false;
+
+            DECREASE_HAND_SIZE(1);
+            goto incTurn;
+
+        case APPOINT_MP:
+            if(
+                !parlMoveCards(
+                    &g->parliament,
+                    &(g->knownHands[g->turn]),
+                    cardA
+                )
+                && !parlMoveCards(
+                    &g->parliament,
+                    &g->faceDownCards,
+                    cardA
+                )
+            )
+                return false;
+            DECREASE_HAND_SIZE(1);
+            goto incTurn;
+
+        case ENTER_ELECTION:
+            // TODO
+            DECREASE_HAND_SIZE(3);
+            goto noIncTurn;
+
+        case IMPEACH_MP:
+            // TODO
+            DECREASE_HAND_SIZE(1);
+            goto noIncTurn;
+
+        case VOTE_NO_CONF:;
+            ParlSuit rankA = PARL_RANK(idxA),
+                rankB = PARL_RANK(idxB),
+                rankC = PARL_RANK(idxC);
+
+            if(rankA != rankB || rankB != rankC)
+                return false;
+
+            ParlSuit suitA = PARL_SUIT(idxA),
+                suitB = PARL_SUIT(idxB),
+                suitC = PARL_SUIT(idxC);
+
+            // TODO
+
+            DECREASE_HAND_SIZE(3);
+            goto incTurn;
+
+        case CABINET_RESHUFFLE:
+            // TODO
+            goto incTurn;
+
+        case APPOINT_PM:
+            if(PARL_CONTAINS(g->cabinet, cardA))
+            {
+                g->cabinet |= PARL_CARD(g->pmCardIdx);
+                g->pmCardIdx = idxA;
+                goto incTurn;
+            } else return false;
+
+        case BLOCK_IMPEACH:
+            // TODO
+            DECREASE_HAND_SIZE(1);
+            goto noIncTurn;
+
+        case REIMPEACH:
+            // TODO
+            DECREASE_HAND_SIZE(1);
+            goto noIncTurn;
+
+        case ALLOW_IMPEACH:
+            // TODO
+            break;
+
+        case CONTEST_ELECTION:
+            // TODO
+            DECREASE_HAND_SIZE(2);
+            goto noIncTurn;
+
+        case NO_CONTEST_ELECTION:
+            // TODO
+            break;
+
+        case APPOINT_BACKUP_PM:
+            // TODO
+            break;
+    }
+
+    incTurn:
+        if(++(g->turn) == g->numPlayers)
+            g->turn = 0;
+    noIncTurn:
+
+    return true;
 }

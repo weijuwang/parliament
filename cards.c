@@ -10,42 +10,49 @@ const ParlCardSymbol PARL_JOKER_SYMBOL = "zz";
 
 const char PARL_SUIT_SYMBOLS[5] = "cshdj";
 
-ParlRank parlRank(const ParlIdx idx)
-{
-    if(PARL_IS_JOKER(idx))
-        return PARL_JOKER_RANK;
-    else
-        return idx % PARL_NUM_RANKS;
-}
-
 int parlStackSize(const ParlStack s)
 {
     register int numNonJokers = 0;
 
     PARL_FOREACH_IDX(i)
-        if(PARL_STACK_CONTAINS(s, PARL_CARD(i)))
+        if(PARL_CONTAINS(s, PARL_CARD(i)))
             ++numNonJokers;
 
     return numNonJokers + (int)PARL_NUM_JOKERS(s);
 }
 
+bool parlRemoveCards(ParlStack* const orig, const ParlStack cards)
+{
+    if(PARL_CONTAINS(*orig, cards))
+    {
+        *orig -= cards;
+        return true;
+    }
+    else return false;
+}
+
+void parlRemoveCardsPartial(ParlStack* const orig, const ParlStack cards)
+{
+    *orig = PARL_WITHOUT_JOKERS(*orig - (*orig & cards))
+        + PARL_NUM_JOKERS(*orig) - PARL_NUM_JOKERS(cards);
+}
+
 bool parlMoveCards(ParlStack* const dest, ParlStack* const orig, const ParlStack cards)
 {
-    if(!PARL_STACK_CONTAINS(*orig, cards))
-        return false;
-
-    *orig -= PARL_CARD(cards);
-    *dest += PARL_CARD(cards);
-
-    return true;
+    if(parlRemoveCards(orig, cards))
+    {
+        *dest += cards;
+        return true;
+    }
+    else return false;
 }
 
 bool parlCardSymbol(ParlCardSymbol out, const ParlIdx idx)
 {
-    ParlRank r = parlRank(idx);
+    ParlRank r = PARL_RANK(idx);
 
     // Non-joker card
-    if(idx < PARL_JOKER_IDX && idx >= 0)
+    if(idx < PARL_NUM_NON_JOKER_CARDS && idx >= 0)
     {
         switch(r)
         {
@@ -72,7 +79,7 @@ bool parlCardSymbol(ParlCardSymbol out, const ParlIdx idx)
     } else return false;
 }
 
-ParlIdx parlCardIdx(const ParlCardSymbol symbol)
+ParlIdx parlSymbolToIdx(const ParlCardSymbol symbol)
 {
     ParlRank rank;
     ParlSuit suit = PARL_PARSE_ERROR;

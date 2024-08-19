@@ -9,6 +9,8 @@
 
 #define PARL_NO_PM -1
 
+#define PARL_NO_ARG -1
+
 /**
  * Returns the known player's hand.
  */
@@ -30,16 +32,19 @@ typedef int ParlPlayer;
 typedef enum {
     /**
      * In NORMAL mode: always legal. Activates DISCARD_AFTER_DRAW mode if the player's hand size is 10 after drawing.
+     * If it's the known player's turn, `idxA` is the drawn card; otherwise no arguments.
      */
     DRAW,
 
     /**
      * In NORMAL mode: legal if the player has at least one card in their hand.
+     * `idxA` is the discarded card.
      */
     DISCARD,
 
     /**
-     * In NORMAL mode: legal if the player has at least one card in their hand and Parliament is not full.
+     * In NORMAL mode: legal if the player has at least one card in their hand and Parliament is not full. `idxA` is the
+     * appointed MP.
      */
     APPOINT_MP,
 
@@ -58,12 +63,15 @@ typedef enum {
     /**
      * In NORMAL mode: legal if there is a PM and the player has at least one card in their hand. If it's the known
      * player's turn, they must also have either a) a king if the PM card is a king, or b) a card higher than the PM.
-     * If Cabinet had at least 2 cards before this was played, REPLACE_PM mode is activated.
+     * If Cabinet had at least 2 cards before this was played, REPLACE_PM mode is activated. `idxA` is the card used to
+     * impeach.
      */
     IMPEACH_PM,
 
     /**
-     *
+     * In NORMAL mode: legal if the player has at least three cards in their hand. If it's the known player's turn, all
+     * three cards must also be of the same rank, and one of them must be of the tied plurality suit. `idxA`, `idxB`,
+     * and `idxC` are the cards played.
      */
     VOTE_NO_CONF,
 
@@ -73,7 +81,8 @@ typedef enum {
     CABINET_RESHUFFLE,
 
     /**
-     * In NORMAL mode: legal if the player is the PM and Cabinet isn't empty.
+     * In NORMAL mode: legal if the player is the PM and Cabinet isn't empty. `idxA` is the Cabinet member that should
+     * be swapped with the PM.
      */
     APPOINT_PM,
 
@@ -81,13 +90,17 @@ typedef enum {
 
     REIMPEACH,
 
+    ALLOW_IMPEACH,
+
     CONTEST_ELECTION,
 
-    PASS
+    NO_CONTEST_ELECTION,
+
+    APPOINT_BACKUP_PM
 } ParlAction;
 
 /**
- * A Parliament game state from one player's perspective, referred to throughout the code as the "known player".
+ * @brief A Parliament game state from one player's perspective, referred to throughout the code as the "known player".
  */
 typedef struct ParlGame {
     /**
@@ -110,7 +123,7 @@ typedef struct ParlGame {
     /**
      * The PM card, or `PARL_NO_PM` if there is no PM.
      */
-    ParlIdx pmCard;
+    ParlIdx pmCardIdx;
 
     /**
      * The Cabinet.
@@ -126,6 +139,11 @@ typedef struct ParlGame {
      * The Parliament.
      */
     ParlStack parliament;
+
+    /**
+     * The discard pile.
+     */
+    ParlStack discard;
 
     /**
      * The size of the draw deck.
@@ -211,30 +229,29 @@ typedef struct ParlGame {
 } ParlGame;
 
 /**
- * Initialize the g from midgame.
+ * @brief Initialize the game from midgame.
  * @param g The g to initialize.
  * @param numJokers The number of jokers in the deck.
  * @param numPlayers Same as the field.
  * @param myPosition Same as the field.
- * @param myFirstCard The first card in the known player's hand, obtained from pregame.
+ * @param myFirstCardIdx The first card in the known player's hand, obtained from pregame.
  * @return Whether the initialization was successful.
  */
 bool parlGame_init(ParlGame* g,
                    int numJokers,
                    int numPlayers,
                    ParlPlayer myPosition,
-                   ParlIdx myFirstCard);
+                   ParlIdx myFirstCardIdx);
 
 /**
- * Free memory allocated for a `ParlGame`, not including the `ParlGame` struct itself.
- *
- * If you dynamically allocated memory to store the `ParlGame` itself, you must `free` it separately.
+ * @brief Free memory allocated for a `ParlGame`, not including the `ParlGame` struct itself.
+ * @note If you dynamically allocated memory to store the `ParlGame` itself, you must `free` it separately.
  * @param g
  */
 void parlGame_free(const ParlGame* g);
 
 /**
- * Deep-copies a ParlGame from `orig` to `dest`.
+ * @brief Deep-copies a ParlGame from `orig` to `dest`.
  * @param dest
  * @param orig
  * @return Whether the initialization was successful.
@@ -248,5 +265,35 @@ bool parlGame_deepCopy(ParlGame* dest, const ParlGame* orig);
  * @note For actions that are only legal when cards in hidden hands are available, they are assumed to be legal.
  */
 unsigned int parlGame_legalActions(const ParlGame* g);
+
+/**
+ * @note For internal use only. Do not call.
+ * @brief Removes `s` from the hand of the player whose turn it is.
+ * @param g
+ * @param s
+ */
+void parlGame_removeFromHand(ParlGame* g, ParlStack s);
+
+/**
+ * @brief Applies the action `a` onto `g`. The caller is responsible for checking with `parlGame_legalActions()` that
+ * the action `a` is legal.
+ * @note An action that is supposedly legal may still be unable to be executed (thus causing this method to return
+ * false) if the arguments are invalid.
+ * @note If you supply extra arguments that are not needed for the specified action, they will not be read, but you
+ * should still use PARL_NO_ARG.
+ *
+ * @param g
+ * @param a
+ * @param idxA
+ * @param idxB
+ * @param idxC
+ * @return Whether the action is legal with the specified arguments.
+ */
+bool parlGame_applyAction(ParlGame* g,
+                          ParlAction a,
+                          ParlIdx idxA,
+                          ParlIdx idxB,
+                          ParlIdx idxC
+                          );
 
 #endif //PARLIAMENT_GAME_H
