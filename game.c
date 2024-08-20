@@ -321,6 +321,7 @@ bool parlGame_applyAction(ParlGame* const g,
         case IMPEACH_MP:
             if(
                 !PARL_CONTAINS(g->parliament, cardA)
+                || !PARL_HIGHER_THAN(idxB, idxA)
                 || !parlGame_removeFromHand(g, cardB)
             )
                 return false;
