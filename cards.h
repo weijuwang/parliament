@@ -10,7 +10,6 @@
  * This API is extremely fast compared to many other card libraries because it stores each deck of cards as a single
  * 64-bit integer. This means there is no dynamic memory allocation anywhere in this API and all operations are bitwise
  * or arithmetic.
- *
  * Internally, this is implemented by treating each card in a stack of cards (ParlStack = uint_64) as a flag that can be
  * set to indicate the card exists in the stack. The 52 rightmost bits in the integer indicate the status of the 52
  * non-joker cards. The number of jokers in the card can be obtained with PARL_NUM_JOKERS(), which simply right-shifts
@@ -57,6 +56,8 @@
  * Returns a stack of empty cards.
  */
 #define PARL_EMPTY_STACK 0ull
+
+#define PARL_SYMBOL_WIDTH 2
 
 /**
  * Returns a complete deck without jokers.
@@ -167,7 +168,7 @@ typedef int ParlIdx;
  * The second letter is the first letter of the suit in lowercase -- e.g. 's' for spades.
  * Jokers are 'zz'.
  */
-typedef char ParlCardSymbol[2];
+typedef char ParlCardSymbol[PARL_SYMBOL_WIDTH];
 
 /**
  * Ranks are zero-indexed from 0 to 12 inclusive.

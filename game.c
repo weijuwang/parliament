@@ -258,6 +258,7 @@ bool parlGame_applyAction(ParlGame* const g,
                 return false;
 
             DECREASE_HAND_SIZE(-1);
+            --g->drawDeckSize;
 
             if(g->handSizes[g->turn] >= PARL_MAX_CARDS_IN_HAND)
             {
