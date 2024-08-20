@@ -12,6 +12,11 @@
 #define PARL_NO_ARG -1
 
 /**
+ * The maximum number of cards a player is allowed to have in their hand.
+ */
+#define PARL_MAX_CARDS_IN_HAND 9
+
+/**
  * Returns the known player's hand.
  */
 #define PARL_MY_HAND(g) (g->knownHands[g->myPosition])
@@ -20,6 +25,11 @@
  * Returns whether it is the known player's turn to move.
  */
 #define PARL_MY_TURN(g) (g->turn == g->myPosition)
+
+/**
+ * Returns the index of the player who is due to play next.
+ */
+#define PARL_NEXT_TURN(g) ((g)->turn >= (g)->numPlayers - 1 ? 0 : (g)->turn + 1)
 
 /**
  * The index of a player.
@@ -99,6 +109,10 @@ typedef enum {
 
     NO_CONTEST_ELECTION,
 
+    /**
+     * In BACKUP_PM mode: The only legal action. Activates NORMAL mode and reverts the turn to whoever was going to go
+     * next after the PM impeachment.
+     */
     APPOINT_BACKUP_PM
 } ParlAction;
 
@@ -183,6 +197,11 @@ typedef struct ParlGame {
          */
         BACKUP_PM
     } mode;
+
+    /**
+     * The player that will have the turn after this impeachment or election is resolved.
+     */
+    ParlPlayer nextNormalTurn;
 
     /* Derived information */
 

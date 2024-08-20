@@ -235,6 +235,12 @@ bool parlGame_applyAction(ParlGame* const g,
                           const ParlIdx idxC
                           )
 {
+    /**
+     * Changes the mode and saves the next normal turn.
+     */
+#define PARL_SWITCH_MODE(g, m) g->mode = m; \
+    g->nextNormalTurn = PARL_NEXT_TURN(g)
+
     register bool myTurn = g->turn == g->myPosition;
     register ParlStack cardA = PARL_CARD(idxA),
         cardB = PARL_CARD(idxB),
@@ -250,8 +256,14 @@ bool parlGame_applyAction(ParlGame* const g,
             ))
                 // The card that was drawn is already face-up or known to be in someone's hand
                 return false;
+
             DECREASE_HAND_SIZE(-1);
-            goto incTurn;
+
+            if(g->handSizes[g->turn] >= PARL_MAX_CARDS_IN_HAND)
+            {
+                g->mode = DISCARD_AFTER_DRAW;
+                goto noIncTurn;
+            } else goto incTurn;
 
         case IMPEACH_PM:
             g->discard += PARL_CARD(g->pmCardIdx);
@@ -276,7 +288,7 @@ bool parlGame_applyAction(ParlGame* const g,
                     g->cabinet = PARL_EMPTY_STACK;
                     break;
                 default:
-                    g->mode = BACKUP_PM;
+                    PARL_SWITCH_MODE(g, BACKUP_PM);
                     break;
             }
 
@@ -300,7 +312,10 @@ bool parlGame_applyAction(ParlGame* const g,
 
             switch(g->mode)
             {
+                // This means we came from IMPEACH_PM, not from DISCARD, and the move after this one is the PM's
+                // replacement of the PM card.
                 case BACKUP_PM:
+                    g->turn = g->pmPosition;
                     goto noIncTurn;
 
                 case DISCARD_AFTER_DRAW:
@@ -334,7 +349,7 @@ bool parlGame_applyAction(ParlGame* const g,
             goto noIncTurn;
 
         case IMPEACH_MP:
-
+            // TODO
             g->mode = IMPEACH;
             DECREASE_HAND_SIZE(1);
             goto noIncTurn;
@@ -426,8 +441,7 @@ bool parlGame_applyAction(ParlGame* const g,
     }
 
     incTurn:
-        if(++(g->turn) == g->numPlayers)
-            g->turn = 0;
+        g->turn = PARL_NEXT_TURN(g);
     noIncTurn:
 
     return true;
