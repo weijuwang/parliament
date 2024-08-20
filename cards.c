@@ -34,7 +34,7 @@ bool parlRemoveCards(ParlStack* const orig, const ParlStack cards)
 void parlRemoveCardsPartial(ParlStack* const orig, const ParlStack cards)
 {
     *orig = PARL_WITHOUT_JOKERS(*orig - (*orig & cards))
-        + PARL_NUM_JOKERS(*orig) - PARL_NUM_JOKERS(cards);
+        + PARL_JOKER_CARD * (PARL_NUM_JOKERS(*orig) - PARL_NUM_JOKERS(cards));
 }
 
 bool parlMoveCards(ParlStack* const dest, ParlStack* const orig, const ParlStack cards)
@@ -61,11 +61,12 @@ bool parlCardSymbol(ParlCardSymbol out, const ParlIdx idx)
                 out[0] = PARL_##rank##_SYMBOL; \
                 break;
             PARLIAMENT_CARDS_SPECIAL_RANK_OUTPUT(ACE)
+            PARLIAMENT_CARDS_SPECIAL_RANK_OUTPUT(TEN)
             PARLIAMENT_CARDS_SPECIAL_RANK_OUTPUT(JACK)
             PARLIAMENT_CARDS_SPECIAL_RANK_OUTPUT(QUEEN)
             PARLIAMENT_CARDS_SPECIAL_RANK_OUTPUT(KING)
             default:
-                out[0] = '0' + r;
+                out[0] = '0' + 1 + r;
         }
 
         out[1] = PARL_SUIT_SYMBOLS[PARL_SUIT(idx)];
@@ -95,11 +96,12 @@ ParlIdx parlSymbolToIdx(const ParlCardSymbol symbol)
                 rank = PARL_##specialRank##_RANK; \
                 break;
         PARLIAMENT_CARDS_SPECIAL_RANK_PARSE(ACE)
+        PARLIAMENT_CARDS_SPECIAL_RANK_PARSE(TEN)
         PARLIAMENT_CARDS_SPECIAL_RANK_PARSE(JACK)
         PARLIAMENT_CARDS_SPECIAL_RANK_PARSE(QUEEN)
         PARLIAMENT_CARDS_SPECIAL_RANK_PARSE(KING)
         default:
-            rank = symbol[0] - '0';
+            rank = symbol[0] - 1 - '0';
     }
 
     /* Parse suit */

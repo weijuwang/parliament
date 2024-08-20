@@ -2,6 +2,22 @@
 // Created by Weiju Wang on 8/17/24.
 //
 
+/**
+ * @file
+ * @brief An API for the card game Parliament.
+ */
+
+/*
+ * TODO Possible future optimizations:
+ * - Remove all malloc/free.
+ * -- handSizes: Even if a PM has the maximum hand size and then gets all the cards in Cabinet, there can only be a
+ *    maximum of 6 (cards in hand) + 32 (cards in Cabinet) = 38 cards, which fits in 6 bits. (The limit of 32 cards in
+ *    Cabinet is provable, as an indirect result of the rules of the game, rather than an imposed limit.) With a maximum
+ *    of 16 players, we will need 96 bits, which means it's going to be an array in any case; we might as well make
+ *    each hand size 8 bits to make it more convenient, so that handSizes takes up 16 bytes.
+ * -- knownHands: ???
+ */
+
 #ifndef PARLIAMENT_GAME_H
 #define PARLIAMENT_GAME_H
 
@@ -41,39 +57,39 @@ typedef int ParlPlayer;
  */
 typedef enum {
     /**
-     * In NORMAL mode: always legal. Activates DISCARD_AFTER_DRAW mode if the player's hand size is 10 after drawing.
+     * In NORMAL_MODE mode: always legal. Activates DISCARD_AFTER_DRAW_MODE mode if the player's hand size is 10 after drawing.
      * If it's the known player's turn, `idxA` is the drawn card; otherwise no arguments.
      */
     DRAW,
 
     /**
-     * In NORMAL mode: legal if the player has at least one card in their hand.
+     * In NORMAL_MODE mode: legal if the player has at least one card in their hand.
      * `idxA` is the discarded card.
-     * In DISCARD_AFTER_DRAW mode: The only legal action. Activates NORMAL mode.
+     * In DISCARD_AFTER_DRAW_MODE mode: The only legal action. Activates NORMAL_MODE mode.
      */
     DISCARD,
 
     /**
-     * In NORMAL mode: legal if the player has at least one card in their hand and Parliament is not full. `idxA` is the
+     * In NORMAL_MODE mode: legal if the player has at least one card in their hand and Parliament is not full. `idxA` is the
      * appointed MP.
      */
     APPOINT_MP,
 
     /**
-     * In NORMAL mode: legal if the player has at least three cards in their hand. If it's the known player's turn,
-     * they must also have three cards in their hand of the same suit. Activates ELECTION mode. `idxA` is the PM
+     * In NORMAL_MODE mode: legal if the player has at least three cards in their hand. If it's the known player's turn,
+     * they must also have three cards in their hand of the same suit. Activates ELECTION_MODE mode. `idxA` is the PM
      * candidate, and `idxB` and `idxC` are the calling cards.
      */
     ENTER_ELECTION,
 
     /**
-     * In NORMAL mode: legal if the player has at least one card in their hand of higher rank than at least one MP.
-     * Activates IMPEACH mode. `idxA` is the MP being impeached and `idxB` is the card replacing it.
+     * In NORMAL_MODE mode: legal if the player has at least one card in their hand of higher rank than at least one MP.
+     * Activates IMPEACH_MODE mode. `idxA` is the MP being impeached and `idxB` is the card replacing it.
      */
     IMPEACH_MP,
 
     /**
-     * In NORMAL mode: legal if there is a PM and the player has at least one card in their hand. If it's the known
+     * In NORMAL_MODE mode: legal if there is a PM and the player has at least one card in their hand. If it's the known
      * player's turn, they must also have either a) a king if the PM card is a king, or b) a card higher than the PM.
      * If Cabinet had at least 2 cards before this was played, REPLACE_PM mode is activated. `idxA` is the card used to
      * impeach.
@@ -81,36 +97,38 @@ typedef enum {
     IMPEACH_PM,
 
     /**
-     * In NORMAL mode: legal if the player has at least three cards in their hand. If it's the known player's turn, all
+     * In NORMAL_MODE mode: legal if the player has at least three cards in their hand. If it's the known player's turn, all
      * three cards must also be of the same rank, and one of them must be of the tied plurality suit. `idxA`, `idxB`,
      * and `idxC` are the cards played.
      */
     VOTE_NO_CONF,
 
     /**
-     * In NORMAL mode: legal if the player is the PM, Cabinet isn't empty, and Parliament isn't empty. `idxA` is the
+     * In NORMAL_MODE mode: legal if the player is the PM, Cabinet isn't empty, and Parliament isn't empty. `idxA` is the
      * Cabinet card and `idxB` is the MP.
      */
     CABINET_RESHUFFLE,
 
     /**
-     * In NORMAL mode: legal if the player is the PM and Cabinet isn't empty. `idxA` is the Cabinet member that should
+     * In NORMAL_MODE mode: legal if the player is the PM and Cabinet isn't empty. `idxA` is the Cabinet member that should
      * be swapped with the PM.
      */
     APPOINT_PM,
 
-    BLOCK_IMPEACH,
-
     REIMPEACH,
 
-    ALLOW_IMPEACH,
+    BLOCK_IMPEACH,
+
+    NO_REIMPEACH,
+
+    NO_BLOCK_IMPEACH,
 
     CONTEST_ELECTION,
 
     NO_CONTEST_ELECTION,
 
     /**
-     * In BACKUP_PM mode: The only legal action. Activates NORMAL mode and reverts the turn to whoever was going to go
+     * In BACKUP_PM_MODE mode: The only legal action. Activates NORMAL_MODE mode and reverts the turn to whoever was going to go
      * next after the PM impeachment.
      */
     APPOINT_BACKUP_PM
@@ -168,40 +186,72 @@ typedef struct ParlGame {
     int drawDeckSize;
 
     /**
-     * In most cases, this is set to `NORMAL`. When there is a move awaiting a response, like an impeachment or election
+     * In most cases, this is set to `NORMAL_MODE`. When there is a move awaiting a response, like an impeachment or election
      * call, it will be set to one of the other modes.
      */
     enum ParlGameMode {
         /**
          * Active when the last impeachment, election, etc. was resolved and it's now the next player's turn.
          */
-        NORMAL,
+        NORMAL_MODE,
 
         /**
          * Active when a player has drawn their 10th card and must now discard 1.
          */
-        DISCARD_AFTER_DRAW,
+        DISCARD_AFTER_DRAW_MODE,
 
         /**
-         * Active when a player impeached a card earlier and is now waiting for any block attempts.
+         * Active when all impeachments attempts in the chain have been blocked so far.
          */
-        IMPEACH,
+        REIMPEACH_MODE,
+
+        /**
+         * Active when the next card to be played in an impeachment chain is a blocking card.
+         */
+        BLOCK_IMPEACH_MODE,
 
         /**
          * Active when a player called an election earlier and is now waiting for opposition.
          */
-        ELECTION,
+        ELECTION_MODE,
 
         /**
          * Active when the PM card has been impeached and the PM must choose between 2 or more Cabinet members to replace the PM card.
          */
-        BACKUP_PM
+        BACKUP_PM_MODE
     } mode;
 
-    /**
-     * The player that will have the turn after this impeachment or election is resolved.
-     */
-    ParlPlayer nextNormalTurn;
+    struct ParlGameTemp
+    {
+        /**
+         * The player that will have the turn after this impeachment or election is resolved.
+         */
+        ParlPlayer nextNormalTurn;
+
+        /**
+         * The card to beat in the stack.
+         */
+        ParlIdx cardToBeatIdx;
+
+        /**
+         * Temporary values that are saved through certain sequences of moves.
+         */
+        union {
+            /**
+             * The MP that was originally impeached.
+             */
+            ParlIdx impeachedMpIdx;
+
+            /**
+             * Values used during elections, in addition to `callingCards`.
+             *
+             *
+             */
+            struct {
+
+            } election;
+        } shared;
+    } temp;
 
     /* Derived information */
 
@@ -219,35 +269,6 @@ typedef struct ParlGame {
      * All cards that are either in the draw pile or someone's hand. These are combined since we can't see either of them.
      */
     ParlStack faceDownCards;
-
-    /**
-     * Temporary values that are saved through certain sequences of moves.
-     */
-    union {
-        /**
-         * Values used during MP impeachments.
-         */
-        struct {
-            /**
-             * The suit of the original MP. All blocks must be of this suit.
-             */
-            ParlSuit mpSuit;
-
-            /**
-             * The card to beat in the stack.
-             */
-            ParlIdx cardToBeat;
-        } impeach;
-
-        /**
-         * Values used during elections, in addition to `callingCards`.
-         *
-         *
-         */
-        struct {
-
-        } election;
-    } temp;
 } ParlGame;
 
 /**
@@ -324,11 +345,43 @@ bool parlGame_applyAction(ParlGame* g,
                           );
 
 /**
- * @note For internal use only. Do not call.
- * @brief Removes `s` from the hand of the player whose turn it is.
  * @param g
  * @param s
+ * @return Whether the hand of the player whose turn it is contains `s` completely.
  */
-void parlGame_removeFromHand(ParlGame* g, ParlStack s);
+bool parlGame_handContains(const ParlGame* g, ParlStack s);
+
+/**
+ * @brief Runs this line of code: g->temp.nextNormalTurn = PARL_NEXT_TURN(g);
+ * @note For internal use only. Do not call.
+ * @param g
+ */
+void parlGame_saveNextNormalTurn(ParlGame* g);
+
+/**
+ * @brief Removes `s` from the hand of the player whose turn it is.
+ * @note For internal use only. Do not call.
+ * @param g
+ * @param s
+ * @return Whether the operation was successful.
+ */
+bool parlGame_removeFromHand(ParlGame* g, ParlStack s);
+
+/**
+ * @brief Moves `s` from the hand of the player whose turn it is to `dest`.
+ * @note For internal use only. Do not call.
+ * @param g
+ * @param dest
+ * @param s
+ * @return Whether the operation was successful.
+ */
+bool parlGame_moveFromHandTo(ParlGame* g, ParlStack* dest, ParlStack s);
+
+/**
+ * @brief Ends the current impeachment stack.
+ * @note For internal use only. Do not call.
+ * @param g
+ */
+void parlGame_confirmImpeachedMp(ParlGame* g);
 
 #endif //PARLIAMENT_GAME_H

@@ -25,8 +25,8 @@ bool parlGame_init(ParlGame* const g,
     g->turn = 0;
     g->parliament = PARL_EMPTY_STACK;
     g->discard = PARL_EMPTY_STACK;
-    g->drawDeckSize = PARL_NUM_NON_JOKER_CARDS + numJokers;
-    g->mode = NORMAL;
+    g->drawDeckSize = PARL_NUM_NON_JOKER_CARDS + numJokers - numPlayers;
+    g->mode = NORMAL_MODE;
 
     g->handSizes = malloc(numPlayers * sizeof(int));
     g->knownHands = calloc(numPlayers, sizeof(ParlStack));
@@ -71,7 +71,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
 {
     switch(g->mode)
     {
-        case NORMAL:;
+        case NORMAL_MODE:;
             register unsigned int legalMoves = 1l<<DRAW;
             #define PARL_ADD_LEGAL_MOVE(m) legalMoves += 1l<<m
 
@@ -177,13 +177,15 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
             }
 
             return legalMoves;
-        case DISCARD_AFTER_DRAW:
+        case DISCARD_AFTER_DRAW_MODE:
             return 1l<<DISCARD;
-        case IMPEACH:
-            return (1l<<REIMPEACH) + (1l<<ALLOW_IMPEACH);
-        case ELECTION:
+        case REIMPEACH_MODE:
+            return (1l<<REIMPEACH) + (1l << NO_REIMPEACH);
+        case BLOCK_IMPEACH_MODE:
+            return (1l<<BLOCK_IMPEACH) + (1l << NO_BLOCK_IMPEACH);
+        case ELECTION_MODE:
             return (1l<<CONTEST_ELECTION) + (1l<<NO_CONTEST_ELECTION);
-        case BACKUP_PM:
+        case BACKUP_PM_MODE:
             return 1l<<APPOINT_PM;
     }
 }
@@ -235,12 +237,6 @@ bool parlGame_applyAction(ParlGame* const g,
                           const ParlIdx idxC
                           )
 {
-    /**
-     * Changes the mode and saves the next normal turn.
-     */
-#define PARL_SWITCH_MODE(g, m) g->mode = m; \
-    g->nextNormalTurn = PARL_NEXT_TURN(g)
-
     register bool myTurn = g->turn == g->myPosition;
     register ParlStack cardA = PARL_CARD(idxA),
         cardB = PARL_CARD(idxB),
@@ -262,7 +258,7 @@ bool parlGame_applyAction(ParlGame* const g,
 
             if(g->handSizes[g->turn] >= PARL_MAX_CARDS_IN_HAND)
             {
-                g->mode = DISCARD_AFTER_DRAW;
+                g->mode = DISCARD_AFTER_DRAW_MODE;
                 goto noIncTurn;
             } else goto incTurn;
 
@@ -276,7 +272,7 @@ bool parlGame_applyAction(ParlGame* const g,
                     g->pmPosition = PARL_NO_PM;
                     g->pmCardIdx = PARL_NO_PM;
                     break;
-                // There is only one card that the
+                // There is only one card that the PM card can be replaced with, so the PM doesn't get a choice
                 case 1:
                     PARL_FOREACH_IDX(i)
                         // We know this must be the only card in Cabinet since we also know its size is 1
@@ -289,73 +285,62 @@ bool parlGame_applyAction(ParlGame* const g,
                     g->cabinet = PARL_EMPTY_STACK;
                     break;
                 default:
-                    PARL_SWITCH_MODE(g, BACKUP_PM);
+                    g->mode = BACKUP_PM_MODE;
+                    parlGame_saveNextNormalTurn(g);
                     break;
             }
 
             // Then fall through to discard cardA -- missing break statement is intentional
         case DISCARD:
-            if(
-                !parlMoveCards(
-                    &g->discard,
-                    &(g->knownHands[g->turn]),
-                    cardA
-                )
-                && !parlMoveCards(
-                    &g->discard,
-                    &g->faceDownCards,
-                    cardA
-                )
-            )
+            if(!parlGame_moveFromHandTo(g, &g->discard, cardA))
                 return false;
-
-            DECREASE_HAND_SIZE(1);
 
             switch(g->mode)
             {
                 // This means we came from IMPEACH_PM, not from DISCARD, and the move after this one is the PM's
                 // replacement of the PM card.
-                case BACKUP_PM:
+                case BACKUP_PM_MODE:
                     g->turn = g->pmPosition;
                     goto noIncTurn;
 
-                case DISCARD_AFTER_DRAW:
-                    g->mode = NORMAL;
+                case DISCARD_AFTER_DRAW_MODE:
+                    g->mode = NORMAL_MODE;
                 default:
                     goto incTurn;
             }
 
         case APPOINT_MP:
-            if(
-                !parlMoveCards(
-                    &g->parliament,
-                    &(g->knownHands[g->turn]),
-                    cardA
-                )
-                && !parlMoveCards(
-                    &g->parliament,
-                    &g->faceDownCards,
-                    cardA
-                )
-            )
+            if(parlGame_moveFromHandTo(g, &g->parliament, cardA))
+                goto incTurn;
+            else
                 return false;
-            DECREASE_HAND_SIZE(1);
-            goto incTurn;
 
         case ENTER_ELECTION:
             // TODO
 
-            g->mode = ELECTION;
+            g->mode = ELECTION_MODE;
             DECREASE_HAND_SIZE(3);
             goto noIncTurn;
 
         case IMPEACH_MP:
-            // TODO
-            g->mode = IMPEACH;
-            DECREASE_HAND_SIZE(1);
+            if(
+                !PARL_CONTAINS(g->parliament, cardA)
+                || !parlGame_removeFromHand(g, cardB)
+            )
+                return false;
+
+            g->temp.shared.impeachedMpIdx = idxA;
+            g->temp.cardToBeatIdx = idxB;
+
+            g->mode = BLOCK_IMPEACH_MODE;
+            parlGame_saveNextNormalTurn(g);
+            g->turn = 0;
             goto noIncTurn;
 
         case VOTE_NO_CONF:;
+            if(!parlGame_removeFromHand(g, cardA + cardB + cardC))
+                return false;
+
             ParlSuit rankA = PARL_RANK(idxA),
                 rankB = PARL_RANK(idxB),
                 rankC = PARL_RANK(idxC);
@@ -386,12 +371,12 @@ bool parlGame_applyAction(ParlGame* const g,
                 if(PARL_CONTAINS(g->parliament, PARL_CARD(i)))
                     // Illegal -- calling cards aren't high enough
                     return false;
-                else if(i == selectedIdx)
+
+                if(i == selectedIdx)
                     // Legal
                     break;
             }
 
-            DECREASE_HAND_SIZE(3);
             goto incTurn;
 
         case CABINET_RESHUFFLE:
@@ -414,18 +399,61 @@ bool parlGame_applyAction(ParlGame* const g,
             } else return false;
 
         case BLOCK_IMPEACH:
-            // TODO
-            DECREASE_HAND_SIZE(1);
+            if(!parlGame_handContains(g, cardA))
+                return false;
+
+            if(PARL_HIGHER_THAN(idxA, g->temp.cardToBeatIdx))
+            {
+                g->discard |= PARL_CARD(g->temp.cardToBeatIdx);
+                parlGame_removeFromHand(g, cardA);
+                g->temp.cardToBeatIdx = idxA;
+                g->turn = 0;
+                g->mode = REIMPEACH_MODE;
+            }
+            else if(
+                g->temp.cardToBeatIdx == PARL_JOKER_IDX
+                && PARL_RANK(idxA) == PARL_ACE_RANK
+            )
+            {
+                parlGame_confirmImpeachedMp(g);
+            }
+            else return false;
+
             goto noIncTurn;
 
         case REIMPEACH:
-            // TODO
-            DECREASE_HAND_SIZE(1);
+            if(
+                !parlGame_handContains(g, cardA)
+                || PARL_SUIT(idxA) != PARL_SUIT(g->temp.shared.impeachedMpIdx)
+            )
+                return false;
+
+            if(PARL_HIGHER_THAN(idxA, g->temp.cardToBeatIdx))
+            {
+                g->discard |= PARL_CARD(g->temp.cardToBeatIdx);
+                parlGame_removeFromHand(g, cardA);
+                g->temp.cardToBeatIdx = idxA;
+                g->turn = 0;
+                g->mode = REIMPEACH_MODE;
+            }
+            else if(
+                g->temp.cardToBeatIdx == PARL_JOKER_IDX
+                && PARL_RANK(idxA) == PARL_ACE_RANK
+                )
+            {
+                parlGame_confirmImpeachedMp(g);
+            }
+            else return false;
+
             goto noIncTurn;
 
-        case ALLOW_IMPEACH:
-            // TODO
-            break;
+        case NO_REIMPEACH:
+        case NO_BLOCK_IMPEACH:
+            if(g->turn < g->numPlayers - 1)
+                goto incTurn;
+
+            parlGame_confirmImpeachedMp(g);
+            goto noIncTurn;
 
         case CONTEST_ELECTION:
             // TODO
@@ -433,12 +461,18 @@ bool parlGame_applyAction(ParlGame* const g,
             goto noIncTurn;
 
         case NO_CONTEST_ELECTION:
+            if(g->turn < g->numPlayers - 1)
+                goto incTurn;
+
             // TODO
-            break;
+            goto noIncTurn;
 
         case APPOINT_BACKUP_PM:
-            // TODO
-            break;
+            if(parlRemoveCards(&g->cabinet, cardA))
+                return false;
+
+            g->pmCardIdx = idxA;
+            goto incTurn;
     }
 
     incTurn:
@@ -448,10 +482,58 @@ bool parlGame_applyAction(ParlGame* const g,
     return true;
 }
 
-void parlGame_removeFromHand(ParlGame* g, ParlStack s)
+bool parlGame_handContains(const ParlGame* g, const ParlStack s)
 {
+    const register ParlStack nj = PARL_WITHOUT_JOKERS(s);
+    return nj == ((nj & g->knownHands[g->turn]) + (nj & g->faceDownCards))
+        &&
+            PARL_NUM_JOKERS(s) <=
+            PARL_NUM_JOKERS(g->faceDownCards) + PARL_NUM_JOKERS(g->knownHands[g->turn]);
+}
+
+void parlGame_saveNextNormalTurn(ParlGame* g)
+{
+    g->temp.nextNormalTurn = PARL_NEXT_TURN(g);
+}
+
+bool parlGame_removeFromHand(ParlGame* g, const ParlStack s)
+{
+    if(!parlGame_handContains(g, s))
+        return false;
+
     DECREASE_HAND_SIZE(parlStackSize(s));
     parlRemoveCardsPartial(&g->knownHands[g->turn], s);
-    if(g->turn != g->myPosition)
-        parlRemoveCardsPartial(&g->faceDownCards, s);
+    parlRemoveCardsPartial(&g->faceDownCards, s);
+
+    return true;
+}
+
+bool parlGame_moveFromHandTo(ParlGame* const g, ParlStack* const dest, const ParlStack s)
+{
+    /*
+     * TODO Should these be partial moves instead? Check with parlGame_removeFromHand()
+     */
+    if(parlMoveCards(
+        &g->parliament,
+        &(g->knownHands[g->turn]),
+        s
+    ) || parlMoveCards(
+        &g->parliament,
+        &g->faceDownCards,
+        s
+    ))
+    {
+        DECREASE_HAND_SIZE(parlStackSize(s));
+        return true;
+    }
+
+    return false;
+}
+
+void parlGame_confirmImpeachedMp(ParlGame* const g)
+{
+    parlMoveCards(&g->discard, &g->parliament, PARL_CARD(g->temp.shared.impeachedMpIdx));
+    g->parliament |= PARL_CARD(g->temp.cardToBeatIdx);
+    g->mode = NORMAL_MODE;
+    g->turn = g->temp.nextNormalTurn;
 }

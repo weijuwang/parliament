@@ -4,17 +4,19 @@
 void printParlStack(const ParlStack s)
 {
     ParlCardSymbol symbol;
+    bool first = true;
     putchar('[');
     PARL_FOREACH_IN_STACK(s, i)
     {
+        if(!first)
+            putchar(' ');
         parlCardSymbol(symbol, i);
         printf(
             "%.*s",
             PARL_SYMBOL_WIDTH,
             symbol
         );
-        if(i < PARL_NUM_NON_JOKER_CARDS - 1)
-            putchar(' ');
+        first = false;
     }
 
     const int numJokers = PARL_NUM_JOKERS(s);
@@ -26,6 +28,7 @@ void printParlStack(const ParlStack s)
 
 void printParlGame(const ParlGame* const g)
 {
+    ParlCardSymbol symbol;
     printf("parl");
     printParlStack(g->parliament);
     printf(" disc");
@@ -36,12 +39,12 @@ void printParlGame(const ParlGame* const g)
         printf("pm~");
     else
     {
-        ParlCardSymbol pmSymbol;
-        parlCardSymbol(pmSymbol, g->pmCardIdx);
+
+        parlCardSymbol(symbol, g->pmCardIdx);
         printf(
             "pm=%.*s cab",
             PARL_SYMBOL_WIDTH,
-            pmSymbol
+            symbol
         );
         printParlStack(g->cabinet);
     }
@@ -56,28 +59,41 @@ void printParlGame(const ParlGame* const g)
 
     switch(g->mode)
     {
-        case NORMAL:
+        case NORMAL_MODE:
             break;
-        case DISCARD_AFTER_DRAW:
+        case DISCARD_AFTER_DRAW_MODE:
             printf("DISC ");
             break;
-        case IMPEACH:
-            printf("IMP ");
+        case REIMPEACH_MODE:
+        case BLOCK_IMPEACH_MODE:
+            parlCardSymbol(symbol, g->temp.shared.impeachedMpIdx);
+            printf(
+                "%s-IMP %.*s->",
+                g->mode == REIMPEACH_MODE ? "RE" : "BLOCK",
+                PARL_SYMBOL_WIDTH,
+                symbol
+            );
+            parlCardSymbol(symbol, g->temp.cardToBeatIdx);
+            printf(
+                "%.*s? ",
+                PARL_SYMBOL_WIDTH,
+                symbol
+            );
             break;
-        case ELECTION:
-            printf("ELEC ");
+        case ELECTION_MODE:
+            printf("ELEC? ");
             break;
-        case BACKUP_PM:
+        case BACKUP_PM_MODE:
             printf("NEW_PM ");
             break;
     }
 
     printf("%i", g->turn);
-    if(g->mode != NORMAL && g->mode != DISCARD_AFTER_DRAW)
-        printf("->%i", g->nextNormalTurn);
-    printf("/%i %i *%i", g->numPlayers, g->myPosition, g->drawDeckSize);
+    if(g->mode != NORMAL_MODE && g->mode != DISCARD_AFTER_DRAW_MODE)
+        printf("->%i", g->temp.nextNormalTurn);
+    printf("/%i *%i %i", g->numPlayers, g->drawDeckSize, g->myPosition);
     printParlStack(g->knownHands[g->myPosition]);
-    puts(" >>>");
+    putchar('\n');
 }
 
 int main(void)
@@ -91,6 +107,10 @@ int main(void)
         parlSymbolToIdx("3h")
     );
     parlGame_applyAction(&g, DRAW, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, APPOINT_MP, parlSymbolToIdx("3h"), PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, IMPEACH_MP, parlSymbolToIdx("3h"), parlSymbolToIdx("4h"), PARL_NO_ARG);
+    parlGame_applyAction(&g, BLOCK_IMPEACH, parlSymbolToIdx("5d"), PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, REIMPEACH, parlSymbolToIdx("6d"), PARL_NO_ARG, PARL_NO_ARG);
     printParlGame(&g);
     printParlStack(g.faceDownCards);
     parlGame_free(&g);
