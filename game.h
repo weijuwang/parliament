@@ -76,7 +76,8 @@ typedef enum {
     VOTE_NO_CONF,
 
     /**
-     * In NORMAL mode: legal if the player is the PM, Cabinet isn't empty, and Parliament isn't empty.
+     * In NORMAL mode: legal if the player is the PM, Cabinet isn't empty, and Parliament isn't empty. `idxA` is the
+     * Cabinet card and `idxB` is the MP.
      */
     CABINET_RESHUFFLE,
 

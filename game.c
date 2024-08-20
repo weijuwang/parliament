@@ -342,7 +342,14 @@ bool parlGame_applyAction(ParlGame* const g,
             goto incTurn;
 
         case CABINET_RESHUFFLE:
-            // TODO
+            if(!PARL_CONTAINS(g->cabinet, cardA) || !PARL_CONTAINS(g->parliament, cardB))
+                return false;
+
+            // "Move to Cabinet from Parliament card B"
+            parlMoveCards(&g->cabinet, &g->parliament, cardB);
+            // "Move to Parliament from Cabinet card A"
+            parlMoveCards(&g->parliament, &g->cabinet, cardA);
+
             goto incTurn;
 
         case APPOINT_PM:
