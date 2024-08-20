@@ -115,7 +115,9 @@
 /**
  * Filter a stack to only cards of a given suit.
  */
-#define PARL_FILTER_SUIT(s, suit) ((s) & (PARL_CARD(suit + 1) - PARL_CARD(suit)))
+#define PARL_FILTER_SUIT(s, suit) ((s) & ( \
+    PARL_CARD(PARL_NUM_RANKS * ((suit) + 1)) - PARL_CARD(PARL_NUM_RANKS * (suit)) \
+    ))
 
 /**
  * Returns the number of jokers in a stack.

@@ -188,19 +188,51 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
     }
 }
 
-void parlGame_removeFromHand(ParlGame* g, ParlStack s)
+unsigned int parlGame_tiedPluralities(const ParlGame* const g)
 {
-    DECREASE_HAND_SIZE(parlStackSize(s));
-    parlRemoveCardsPartial(&g->knownHands[g->turn], s);
-    if(g->turn != g->myPosition)
-        parlRemoveCardsPartial(&g->faceDownCards, s);
+    register unsigned int tiedPluralities = 0;
+    register int pluralitySuitSize = 0, thisSuitSize;
+
+    PARL_FOREACH_SUIT(s)
+    {
+        thisSuitSize = parlStackSize(PARL_FILTER_SUIT(g->parliament, s));
+        if(thisSuitSize > pluralitySuitSize)
+        {
+            pluralitySuitSize = thisSuitSize;
+            tiedPluralities = 1u << s;
+        }
+        else if(thisSuitSize == pluralitySuitSize)
+            tiedPluralities |= 1u << s;
+    }
+
+    return tiedPluralities;
 }
 
-bool parlGame_applyAction(ParlGame* g,
-                          ParlAction a,
-                          ParlIdx idxA,
-                          ParlIdx idxB,
-                          ParlIdx idxC
+ParlSuit parlGame_plurality(const ParlGame* g)
+{
+    register ParlSuit plurality = INVALID_SUIT;
+    register int pluralitySuitSize = 0, thisSuitSize;
+
+    PARL_FOREACH_SUIT(s)
+    {
+        thisSuitSize = parlStackSize(PARL_FILTER_SUIT(g->parliament, s));
+        if(thisSuitSize > pluralitySuitSize)
+        {
+            plurality = s;
+            pluralitySuitSize = thisSuitSize;
+        }
+        else if(thisSuitSize == pluralitySuitSize)
+            return INVALID_SUIT;
+    }
+
+    return plurality;
+}
+
+bool parlGame_applyAction(ParlGame* const g,
+                          const ParlAction a,
+                          const ParlIdx idxA,
+                          const ParlIdx idxB,
+                          const ParlIdx idxC
                           )
 {
     register bool myTurn = g->turn == g->myPosition;
@@ -278,11 +310,33 @@ bool parlGame_applyAction(ParlGame* g,
             if(rankA != rankB || rankB != rankC)
                 return false;
 
-            ParlSuit suitA = PARL_SUIT(idxA),
-                suitB = PARL_SUIT(idxB),
-                suitC = PARL_SUIT(idxC);
+            register ParlIdx selectedIdx;
+            register unsigned int pluralitySuits = parlGame_tiedPluralities(g);
 
-            // TODO
+            if((1u << PARL_SUIT(idxA)) & pluralitySuits)
+                selectedIdx = idxA;
+            else if((1u << PARL_SUIT(idxB)) & pluralitySuits)
+                selectedIdx = idxB;
+            else if((1u << PARL_SUIT(idxC)) & pluralitySuits)
+                selectedIdx = idxC;
+            else return false;
+
+            register ParlSuit selectedSuit = PARL_SUIT(selectedIdx);
+
+            for(
+                ParlIdx i = PARL_RS_TO_IDX(PARL_KING_RANK, selectedSuit);
+                i >= PARL_RS_TO_IDX(PARL_ACE_RANK, selectedSuit);
+                --i)
+            {
+                // Iterate through all cards of the selected plurality suit going down.
+                // If we hit the calling card before hitting any MPs it means there are no MPs higher than that card.
+                if(PARL_CONTAINS(g->parliament, PARL_CARD(i)))
+                    // Illegal -- calling cards aren't high enough
+                    return false;
+                else if(i == selectedIdx)
+                    // Legal
+                    break;
+            }
 
             DECREASE_HAND_SIZE(3);
             goto incTurn;
@@ -333,4 +387,12 @@ bool parlGame_applyAction(ParlGame* g,
     noIncTurn:
 
     return true;
+}
+
+void parlGame_removeFromHand(ParlGame* g, ParlStack s)
+{
+    DECREASE_HAND_SIZE(parlStackSize(s));
+    parlRemoveCardsPartial(&g->knownHands[g->turn], s);
+    if(g->turn != g->myPosition)
+        parlRemoveCardsPartial(&g->faceDownCards, s);
 }

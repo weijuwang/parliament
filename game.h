@@ -267,12 +267,17 @@ bool parlGame_deepCopy(ParlGame* dest, const ParlGame* orig);
 unsigned int parlGame_legalActions(const ParlGame* g);
 
 /**
- * @note For internal use only. Do not call.
- * @brief Removes `s` from the hand of the player whose turn it is.
  * @param g
- * @param s
+ * @return The tied plurality suits, with the indices of set bits being the indices of tied plurality suits.
  */
-void parlGame_removeFromHand(ParlGame* g, ParlStack s);
+unsigned int parlGame_tiedPluralities(const ParlGame* g);
+
+/**
+ * @param g
+ * @return The plurality suit, or `INVALID_SUIT` if two or more suits are tied. In that case, use
+ * `parlGame_tiedPluralities`.
+ */
+ParlSuit parlGame_plurality(const ParlGame* g);
 
 /**
  * @brief Applies the action `a` onto `g`. The caller is responsible for checking with `parlGame_legalActions()` that
@@ -295,5 +300,13 @@ bool parlGame_applyAction(ParlGame* g,
                           ParlIdx idxB,
                           ParlIdx idxC
                           );
+
+/**
+ * @note For internal use only. Do not call.
+ * @brief Removes `s` from the hand of the player whose turn it is.
+ * @param g
+ * @param s
+ */
+void parlGame_removeFromHand(ParlGame* g, ParlStack s);
 
 #endif //PARLIAMENT_GAME_H
