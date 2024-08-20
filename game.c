@@ -255,8 +255,32 @@ bool parlGame_applyAction(ParlGame* const g,
 
         case IMPEACH_PM:
             g->discard += PARL_CARD(g->pmCardIdx);
-            g->pmCardIdx = idxA;
-            // Missing `break` statement is intentional
+
+            switch(parlStackSize(g->cabinet))
+            {
+                // No more PM!
+                case 0:
+                    g->pmPosition = PARL_NO_PM;
+                    g->pmCardIdx = PARL_NO_PM;
+                    break;
+                // There is only one card that the
+                case 1:
+                    PARL_FOREACH_IDX(i)
+                        // We know this must be the only card in Cabinet since we also know its size is 1
+                        if(PARL_CONTAINS(g->cabinet, PARL_CARD(i)))
+                        {
+                            g->pmCardIdx = i;
+                            break;
+                        }
+                    // After removing the only card in Cabinet, it must be empty
+                    g->cabinet = PARL_EMPTY_STACK;
+                    break;
+                default:
+                    g->mode = BACKUP_PM;
+                    break;
+            }
+
+            // Then fall through to discard cardA -- missing break statement is intentional
         case DISCARD:
             if(
                 !parlMoveCards(
@@ -273,7 +297,17 @@ bool parlGame_applyAction(ParlGame* const g,
                 return false;
 
             DECREASE_HAND_SIZE(1);
-            goto incTurn;
+
+            switch(g->mode)
+            {
+                case BACKUP_PM:
+                    goto noIncTurn;
+
+                case DISCARD_AFTER_DRAW:
+                    g->mode = NORMAL;
+                default:
+                    goto incTurn;
+            }
 
         case APPOINT_MP:
             if(
@@ -294,11 +328,14 @@ bool parlGame_applyAction(ParlGame* const g,
 
         case ENTER_ELECTION:
             // TODO
+
+            g->mode = ELECTION;
             DECREASE_HAND_SIZE(3);
             goto noIncTurn;
 
         case IMPEACH_MP:
-            // TODO
+
+            g->mode = IMPEACH;
             DECREASE_HAND_SIZE(1);
             goto noIncTurn;
 

@@ -39,6 +39,7 @@ typedef enum {
     /**
      * In NORMAL mode: legal if the player has at least one card in their hand.
      * `idxA` is the discarded card.
+     * In DISCARD_AFTER_DRAW mode: The only legal action. Activates NORMAL mode.
      */
     DISCARD,
 
@@ -50,13 +51,14 @@ typedef enum {
 
     /**
      * In NORMAL mode: legal if the player has at least three cards in their hand. If it's the known player's turn,
-     * they must also have three cards in their hand of the same suit. Activates ELECTION mode.
+     * they must also have three cards in their hand of the same suit. Activates ELECTION mode. `idxA` is the PM
+     * candidate, and `idxB` and `idxC` are the calling cards.
      */
     ENTER_ELECTION,
 
     /**
      * In NORMAL mode: legal if the player has at least one card in their hand of higher rank than at least one MP.
-     * Activates IMPEACH mode.
+     * Activates IMPEACH mode. `idxA` is the MP being impeached and `idxB` is the card replacing it.
      */
     IMPEACH_MP,
 
@@ -155,7 +157,7 @@ typedef struct ParlGame {
      * In most cases, this is set to `NORMAL`. When there is a move awaiting a response, like an impeachment or election
      * call, it will be set to one of the other modes.
      */
-    enum {
+    enum ParlGameMode {
         /**
          * Active when the last impeachment, election, etc. was resolved and it's now the next player's turn.
          */
