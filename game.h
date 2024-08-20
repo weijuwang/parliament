@@ -14,7 +14,7 @@
 /**
  * The maximum number of cards a player is allowed to have in their hand.
  */
-#define PARL_MAX_CARDS_IN_HAND 9
+#define PARL_MAX_CARDS_IN_HAND 6
 
 /**
  * Returns the known player's hand.
