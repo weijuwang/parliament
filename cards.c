@@ -23,12 +23,11 @@ int parlStackSize(const ParlStack s)
 
 bool parlRemoveCards(ParlStack* const orig, const ParlStack cards)
 {
-    if(PARL_CONTAINS(*orig, cards))
-    {
-        *orig -= cards;
-        return true;
-    }
-    else return false;
+    if(!PARL_CONTAINS(*orig, cards))
+        return false;
+
+    *orig -= cards;
+    return true;
 }
 
 void parlRemoveCardsPartial(ParlStack* const orig, const ParlStack cards)
@@ -39,20 +38,19 @@ void parlRemoveCardsPartial(ParlStack* const orig, const ParlStack cards)
 
 bool parlMoveCards(ParlStack* const dest, ParlStack* const orig, const ParlStack cards)
 {
-    if(parlRemoveCards(orig, cards))
-    {
-        *dest += cards;
-        return true;
-    }
-    else return false;
+    if(!parlRemoveCards(orig, cards))
+        return false;
+
+    *dest += cards;
+    return true;
 }
 
-bool parlCardSymbol(ParlCardSymbol out, const ParlIdx idx)
+void parlCardSymbol(ParlCardSymbol out, const ParlIdx idx)
 {
     ParlRank r = PARL_RANK(idx);
 
     // Non-joker card
-    if(idx < PARL_NUM_NON_JOKER_CARDS && idx >= 0)
+    if(idx < PARL_NUM_NON_JOKER_CARDS)
     {
         switch(r)
         {
@@ -70,14 +68,12 @@ bool parlCardSymbol(ParlCardSymbol out, const ParlIdx idx)
         }
 
         out[1] = PARL_SUIT_SYMBOLS[PARL_SUIT(idx)];
-        return true;
     }
     else if(PARL_IS_JOKER(idx))
     {
         // memcpy instead of strcpy or related functions b/c no null terminator
         memcpy(out, PARL_JOKER_SYMBOL, 2);
-        return true;
-    } else return false;
+    }
 }
 
 ParlIdx parlSymbolToIdx(const ParlCardSymbol symbol)
@@ -112,8 +108,5 @@ ParlIdx parlSymbolToIdx(const ParlCardSymbol symbol)
             break;
         }
 
-    if(rank < 0 || suit < 0)
-        return PARL_PARSE_ERROR;
-    else
-        return PARL_RS_TO_IDX(rank, suit);
+    return suit >= 0 ? PARL_RS_TO_IDX(rank, suit) : PARL_PARSE_ERROR;
 }

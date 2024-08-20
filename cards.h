@@ -168,7 +168,7 @@
  *
  * Jokers are complicated; see `PARL_JOKER_IDX`. Any `ParlIdx` higher than 52 is treated as a joker for simplicity.
  */
-typedef int ParlIdx;
+typedef unsigned int ParlIdx;
 
 /**
  * A sequence of two alphanumeric characters that uniquely identify each card.
@@ -182,7 +182,7 @@ typedef char ParlCardSymbol[PARL_SYMBOL_WIDTH];
 /**
  * Ranks are zero-indexed from 0 to 12 inclusive.
  */
-typedef int ParlRank;
+typedef unsigned int ParlRank;
 
 /**
  * A collection of cards. There is only one of each card in play at any time except for jokers, of which there can be
@@ -199,14 +199,10 @@ typedef uint64_t ParlStack;
  * The suit of a `ParlIdx`.
  */
 typedef enum {
+    INVALID_SUIT = -1,
     CLUBS, SPADES,
     HEARTS, DIAMONDS,
     PARL_JOKER_SUIT,
-
-    /**
-     * This serves to indicate to the compiler that this enum type must be signed.
-     */
-    INVALID_SUIT = -1
 } ParlSuit;
 
 /**
@@ -251,9 +247,8 @@ bool parlMoveCards(ParlStack* dest, ParlStack* orig, ParlStack cards);
  * Writes the symbol of card `idx` to `out`.
  * @param out The ParlCardSymbol to which the card's symbol should be outputted.
  * @param idx
- * @return `true` if `idx` was a valid card.
  */
-bool parlCardSymbol(ParlCardSymbol out, ParlIdx idx);
+void parlCardSymbol(ParlCardSymbol out, ParlIdx idx);
 
 /**
  * @param symbol

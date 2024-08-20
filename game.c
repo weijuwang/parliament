@@ -66,8 +66,8 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
     switch(g->mode)
     {
         case NORMAL_MODE:;
-            register unsigned int legalMoves = 1l<<DRAW;
-            #define PARL_ADD_LEGAL_MOVE(m) legalMoves += 1l<<m
+            register unsigned int legalMoves = 1u<<DRAW;
+            #define PARL_ADD_LEGAL_MOVE(m) legalMoves += 1u<<m
 
             const register int handSize = g->handSizes[g->turn];
             const register int parlSize = parlStackSize(g->parliament);
@@ -172,15 +172,17 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
 
             return legalMoves;
         case DISCARD_AFTER_DRAW_MODE:
-            return 1l<<DISCARD;
+            return 1u<<DISCARD;
         case REIMPEACH_MODE:
-            return (1l<<REIMPEACH) + (1l << NO_REIMPEACH);
+            return (1u<<REIMPEACH) + (1u << NO_REIMPEACH);
         case BLOCK_IMPEACH_MODE:
-            return (1l<<BLOCK_IMPEACH) + (1l << NO_BLOCK_IMPEACH);
+            return (1u<<BLOCK_IMPEACH) + (1u << NO_BLOCK_IMPEACH);
         case ELECTION_MODE:
-            return (1l<<CONTEST_ELECTION) + (1l<<NO_CONTEST_ELECTION);
+            return (1u<<CONTEST_ELECTION) + (1u<<NO_CONTEST_ELECTION);
         case BACKUP_PM_MODE:
-            return 1l<<APPOINT_PM;
+            return 1u<<APPOINT_PM;
+        default:
+            return 0;
     }
 }
 
@@ -393,7 +395,10 @@ bool parlGame_applyAction(ParlGame* const g,
             } else return false;
 
         case BLOCK_IMPEACH:
-            if(!parlGame_handContains(g, cardA))
+            if(
+                !parlGame_handContains(g, cardA)
+                || PARL_SUIT(idxA) != PARL_SUIT(g->temp.shared.impeachedMpIdx)
+            )
                 return false;
 
             if(PARL_HIGHER_THAN(idxA, g->temp.cardToBeatIdx))
@@ -466,6 +471,7 @@ bool parlGame_applyAction(ParlGame* const g,
                 return false;
 
             g->pmCardIdx = idxA;
+            g->mode = NORMAL_MODE;
             goto incTurn;
     }
 
@@ -507,15 +513,10 @@ bool parlGame_moveFromHandTo(ParlGame* const g, ParlStack* const dest, const Par
     /*
      * TODO Should these be partial moves instead? Check with parlGame_removeFromHand()
      */
-    if(parlMoveCards(
-        &g->parliament,
-        &(g->knownHands[g->turn]),
-        s
-    ) || parlMoveCards(
-        &g->parliament,
-        &g->faceDownCards,
-        s
-    ))
+    if(
+        parlMoveCards(dest,&(g->knownHands[g->turn]),s)
+        || parlMoveCards(dest,&g->faceDownCards,s)
+    )
     {
         DECREASE_HAND_SIZE(parlStackSize(s));
         return true;
