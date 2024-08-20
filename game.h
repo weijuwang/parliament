@@ -9,13 +9,7 @@
 
 /*
  * TODO Possible future optimizations:
- * - Remove all malloc/free.
- * -- handSizes: Even if a PM has the maximum hand size and then gets all the cards in Cabinet, there can only be a
- *    maximum of 6 (cards in hand) + 32 (cards in Cabinet) = 38 cards, which fits in 6 bits. (The limit of 32 cards in
- *    Cabinet is provable, as an indirect result of the rules of the game, rather than an imposed limit.) With a maximum
- *    of 16 players, we will need 96 bits, which means it's going to be an array in any case; we might as well make
- *    each hand size 8 bits to make it more convenient, so that handSizes takes up 16 bytes.
- * -- knownHands: ???
+ * - Make knownHands the same size every time so we don't need to call `calloc`, which is slow afaik
  */
 
 #ifndef PARLIAMENT_GAME_H
@@ -31,6 +25,16 @@
  * The maximum number of cards a player is allowed to have in their hand.
  */
 #define PARL_MAX_CARDS_IN_HAND 6
+
+/**
+ * The maximum number of players in one game.
+ */
+#define PARL_MAX_NUM_PLAYERS 16
+
+/**
+ * The width, in bits, of a player ID.
+ */
+#define PARL_PLAYER_WIDTH 4
 
 /**
  * Returns the known player's hand.
@@ -141,34 +145,34 @@ typedef struct ParlGame {
     /**
      * The number of players in the game.
      */
-    int numPlayers;
+    ParlPlayer numPlayers : 5;
 
     /**
      * The number of turns away from the first turn that the known player sits.
      */
-    ParlPlayer myPosition;
+    ParlPlayer myPosition : PARL_PLAYER_WIDTH;
 
     /* Essentials -- required to enforce rules */
 
     /**
+     * The index of the player whose turn it is.
+     */
+    ParlPlayer turn : PARL_PLAYER_WIDTH;
+
+    /**
      * The number of turns away from the first turn that the PM sits, or `PARL_NO_PM` if there is no PM.
      */
-    ParlPlayer pmPosition;
+    ParlPlayer pmPosition : PARL_PLAYER_WIDTH;
 
     /**
      * The PM card, or `PARL_NO_PM` if there is no PM.
      */
-    ParlIdx pmCardIdx;
+    ParlIdx pmCardIdx : PARL_IDX_WIDTH;
 
     /**
      * The Cabinet.
      */
     ParlStack cabinet;
-
-    /**
-     * The index of the player whose turn it is.
-     */
-    ParlPlayer turn;
 
     /**
      * The Parliament.
@@ -219,19 +223,19 @@ typedef struct ParlGame {
          * Active when the PM card has been impeached and the PM must choose between 2 or more Cabinet members to replace the PM card.
          */
         BACKUP_PM_MODE
-    } mode;
+    } mode : 3;
 
     struct ParlGameTemp
     {
         /**
          * The player that will have the turn after this impeachment or election is resolved.
          */
-        ParlPlayer nextNormalTurn;
+        ParlPlayer nextNormalTurn : PARL_PLAYER_WIDTH;
 
         /**
          * The card to beat in the stack.
          */
-        ParlIdx cardToBeatIdx;
+        ParlIdx cardToBeatIdx : PARL_IDX_WIDTH;
 
         /**
          * Temporary values that are saved through certain sequences of moves.
@@ -240,7 +244,7 @@ typedef struct ParlGame {
             /**
              * The MP that was originally impeached.
              */
-            ParlIdx impeachedMpIdx;
+            ParlIdx impeachedMpIdx : PARL_IDX_WIDTH;
 
             /**
              * Values used during elections, in addition to `callingCards`.
@@ -257,8 +261,10 @@ typedef struct ParlGame {
 
     /**
      * The size of each player's hand.
+     *
+     * TODO Is this better as int_fast8_t or int8_t?
      */
-    int* handSizes;
+    int8_t handSizes[PARL_MAX_NUM_PLAYERS];
 
     /**
      * Cards that are known to be in certain players' hands.

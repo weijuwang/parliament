@@ -28,40 +28,34 @@ bool parlGame_init(ParlGame* const g,
     g->drawDeckSize = PARL_NUM_NON_JOKER_CARDS + numJokers - numPlayers;
     g->mode = NORMAL_MODE;
 
-    g->handSizes = malloc(numPlayers * sizeof(int));
-    g->knownHands = calloc(numPlayers, sizeof(ParlStack));
+    if(!(g->knownHands = calloc(numPlayers, sizeof(ParlStack))))
+        return false;
 
-    for(int i = 0; i < numPlayers; ++i)
-        g->handSizes[i] = 1;
+    for(ParlPlayer p = 0; p < numPlayers; ++p)
+        g->handSizes[p] = 1;
     g->knownHands[g->myPosition] = PARL_CARD(myFirstCardIdx);
 
     g->faceDownCards = numJokers * PARL_JOKER_CARD
                        + PARL_COMPLETE_STACK_NO_JOKERS
                        - PARL_CARD(myFirstCardIdx);
 
-    // Memory allocation errors will set one of these to null.
-    return g->handSizes && g->knownHands;
+    return true;
 }
 
 void parlGame_free(const ParlGame* const g)
 {
-    free(g->handSizes);
     free(g->knownHands);
 }
 
 bool parlGame_deepCopy(ParlGame* const dest, const ParlGame* const orig)
 {
-    const register unsigned int HAND_SIZES_SIZE = orig->numPlayers * sizeof(int);
     const register unsigned int KNOWN_HANDS_SIZE = dest->numPlayers * sizeof(ParlStack);
 
     memcpy(dest, orig, sizeof(ParlGame));
 
-    if(!(dest->handSizes = malloc(HAND_SIZES_SIZE)))
-        return false;
     if(!(dest->knownHands = malloc(KNOWN_HANDS_SIZE)))
         return false;
 
-    memcpy(dest->handSizes, orig->handSizes, HAND_SIZES_SIZE);
     memcpy(dest->knownHands, orig->knownHands, KNOWN_HANDS_SIZE);
 
     return true;

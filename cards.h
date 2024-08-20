@@ -58,7 +58,15 @@
  */
 #define PARL_EMPTY_STACK 0ull
 
+/**
+ * The width of a ParlCardSymbol in bytes.
+ */
 #define PARL_SYMBOL_WIDTH 2
+
+/**
+ * The minimum width of a ParlIdx in bits. The maximum ParlIdx is 54 and 6 bits are needed to store that.
+ */
+#define PARL_IDX_WIDTH 6
 
 /**
  * Returns a complete deck without jokers.
