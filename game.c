@@ -15,29 +15,31 @@ bool parlGame_init(ParlGame* const g,
                    const ParlPlayer myPosition,
                    const ParlIdx myFirstCardIdx)
 {
-    g->numPlayers = numPlayers;
-    g->myPosition = myPosition;
+    *g = (ParlGame){
+        .numPlayers = numPlayers,
+        .myPosition = myPosition,
+        .turn = 0,
+        .pmPosition = PARL_NO_PM,
+        .pmCardIdx = PARL_NO_PM,
+        .cabinet = PARL_EMPTY_STACK,
+        .parliament = PARL_EMPTY_STACK,
+        .discard = PARL_EMPTY_STACK,
+        .drawDeckSize = PARL_NUM_NON_JOKER_CARDS + numJokers - numPlayers,
+        .mode = NORMAL_MODE,
+        .temp.electionCandidates = NULL,
 
-    g->pmPosition = PARL_NO_PM;
-    g->pmCardIdx = PARL_NO_PM;
-    g->cabinet = PARL_EMPTY_STACK;
+        .knownHands = calloc(numPlayers, sizeof(ParlStack)),
+        .faceDownCards = numJokers * PARL_JOKER_CARD
+            + PARL_COMPLETE_STACK_NO_JOKERS
+            - PARL_CARD(myFirstCardIdx),
+    };
 
-    g->turn = 0;
-    g->parliament = PARL_EMPTY_STACK;
-    g->discard = PARL_EMPTY_STACK;
-    g->drawDeckSize = PARL_NUM_NON_JOKER_CARDS + numJokers - numPlayers;
-    g->mode = NORMAL_MODE;
-
-    if(!(g->knownHands = calloc(numPlayers, sizeof(ParlStack))))
+    if(!g->knownHands)
         return false;
+    g->knownHands[g->myPosition] = PARL_CARD(myFirstCardIdx);
 
     for(ParlPlayer p = 0; p < numPlayers; ++p)
         g->handSizes[p] = 1;
-    g->knownHands[g->myPosition] = PARL_CARD(myFirstCardIdx);
-
-    g->faceDownCards = numJokers * PARL_JOKER_CARD
-                       + PARL_COMPLETE_STACK_NO_JOKERS
-                       - PARL_CARD(myFirstCardIdx);
 
     return true;
 }
@@ -45,6 +47,7 @@ bool parlGame_init(ParlGame* const g,
 void parlGame_free(const ParlGame* const g)
 {
     free(g->knownHands);
+    free(g->temp.electionCandidates);
 }
 
 bool parlGame_deepCopy(ParlGame* const dest, const ParlGame* const orig)
@@ -66,7 +69,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
     switch(g->mode)
     {
         case NORMAL_MODE:;
-            register unsigned int legalMoves = 1u<<DRAW;
+            register unsigned int legalMoves = g->turn == g->myPosition ? 1u<<SELF_DRAW : 1u<<DRAW;
             #define PARL_ADD_LEGAL_MOVE(m) legalMoves += 1u<<m
 
             const register int handSize = g->handSizes[g->turn];
@@ -240,15 +243,14 @@ bool parlGame_applyAction(ParlGame* const g,
 
     switch(a)
     {
-        case DRAW:
-            if(myTurn && !parlMoveCards(
+        case SELF_DRAW:
+            if(!parlMoveCards(
                 &(g->knownHands[g->turn]),
                 &g->faceDownCards,
                 cardA
             ))
-                // The card that was drawn is already face-up or known to be in someone's hand
                 return false;
-
+        case DRAW:
             DECREASE_HAND_SIZE(-1);
             --g->drawDeckSize;
 
@@ -256,7 +258,8 @@ bool parlGame_applyAction(ParlGame* const g,
             {
                 g->mode = DISCARD_AFTER_DRAW_MODE;
                 goto noIncTurn;
-            } else goto incTurn;
+            }
+            goto incTurn;
 
         case IMPEACH_PM:
             g->discard += PARL_CARD(g->pmCardIdx);
@@ -312,10 +315,35 @@ bool parlGame_applyAction(ParlGame* const g,
                 return false;
 
         case ENTER_ELECTION:
-            // TODO
+            // All 3 cards must be the same suit
+            if(PARL_SUIT(idxA) != PARL_SUIT(idxB) || PARL_SUIT(idxB) != PARL_SUIT(idxC))
+                return false;
 
+            if(g->turn == g->pmPosition)
+            {
+                g->temp.shared.pmCallingCardOrigins = (struct ParlPmCallingCardOrigins){
+                    .pmCandidateOrigin = parlGame_cardOrigin(g, idxA),
+                    .cabinetAOrigin = parlGame_cardOrigin(g, idxB),
+                    .cabinetBOrigin = parlGame_cardOrigin(g, idxC)
+                };
+
+                if(
+                    g->temp.shared.pmCallingCardOrigins.pmCandidateOrigin == UNKNOWN
+                    || g->temp.shared.pmCallingCardOrigins.cabinetAOrigin == UNKNOWN
+                    || g->temp.shared.pmCallingCardOrigins.cabinetBOrigin == UNKNOWN
+                )
+                    return false;
+            } else if(!parlGame_handContains(g, cardA | cardB | cardC))
+                return false;
+
+            g->temp.electionCandidates = malloc(g->numPlayers * sizeof(struct ParlElectionCandidate));
+            g->temp.electionCandidates[g->turn] = (struct ParlElectionCandidate){
+                .pmCandidateIdx = idxA,
+                .cabinetAIdx = idxB,
+                .cabinetBIdx = idxC
+            };
             g->mode = ELECTION_MODE;
-            DECREASE_HAND_SIZE(3);
+
             goto noIncTurn;
 
         case IMPEACH_MP:
@@ -361,7 +389,8 @@ bool parlGame_applyAction(ParlGame* const g,
             for(
                 ParlIdx i = PARL_RS_TO_IDX(PARL_KING_RANK, selectedSuit);
                 i >= PARL_RS_TO_IDX(PARL_ACE_RANK, selectedSuit);
-                --i)
+                --i
+            )
             {
                 // Iterate through all cards of the selected plurality suit going down.
                 // If we hit the calling card before hitting any MPs it means there are no MPs higher than that card.
@@ -373,6 +402,11 @@ bool parlGame_applyAction(ParlGame* const g,
                     // Legal
                     break;
             }
+
+            g->discard |= PARL_CARD(g->pmCardIdx) | g->cabinet;
+            g->pmPosition = PARL_NO_PM;
+            g->pmCardIdx = PARL_NO_PM;
+            g->cabinet = PARL_EMPTY_STACK;
 
             goto incTurn;
 
@@ -485,6 +519,9 @@ bool parlGame_applyAction(ParlGame* const g,
 
 bool parlGame_handContains(const ParlGame* g, const ParlStack s)
 {
+    if(g->turn == g->myPosition)
+        return PARL_CONTAINS(g->knownHands[g->turn], s);
+
     const register ParlStack nj = PARL_WITHOUT_JOKERS(s);
     return nj == ((nj & g->knownHands[g->turn]) + (nj & g->faceDownCards))
         &&
@@ -532,4 +569,20 @@ void parlGame_confirmImpeachedMp(ParlGame* const g)
     g->parliament |= PARL_CARD(g->temp.cardToBeatIdx);
     g->mode = NORMAL_MODE;
     g->turn = g->temp.nextNormalTurn;
+}
+
+ParlCallingCardOrigin parlGame_cardOrigin(const ParlGame* const g, const ParlIdx i)
+{
+    if(g->pmCardIdx == i)
+        return FROM_CABINET;
+
+    const register ParlStack c = PARL_CARD(i);
+
+    if(PARL_CONTAINS(g->cabinet, c))
+        return FROM_PARL;
+
+    if((g->faceDownCards & c) || (g->knownHands[g->turn] & c))
+        return FROM_HAND;
+
+    return UNKNOWN;
 }

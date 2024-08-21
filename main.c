@@ -35,11 +35,17 @@ void printParlGame(const ParlGame* const g)
     printParlStack(g->discard);
     puts("");
 
+    for(ParlPlayer p = 0; p < g->numPlayers; ++p)
+    {
+        printf(" %i", g->handSizes[p]);
+    }
+
+    printf("; pm");
+
     if(g->pmPosition == PARL_NO_PM)
-        printf("pm~");
+        printf("~");
     else
     {
-
         parlCardSymbol(symbol, g->pmCardIdx);
         printf(
             "pm=%.*s cab",
@@ -49,13 +55,7 @@ void printParlGame(const ParlGame* const g)
         printParlStack(g->cabinet);
     }
 
-    printf("\nhands ");
-    for(ParlPlayer p = 0; p < g->numPlayers; ++p)
-    {
-        printf("%i ", g->handSizes[p]);
-    }
-
-    putchar('\n');
+    printf("\n(");
 
     switch(g->mode)
     {
@@ -88,7 +88,7 @@ void printParlGame(const ParlGame* const g)
             break;
     }
 
-    printf("%i", g->turn);
+    printf("%i)", g->turn);
     if(g->mode != NORMAL_MODE && g->mode != DISCARD_AFTER_DRAW_MODE)
         printf("->%i", g->temp.nextNormalTurn);
     printf("/%i *%i %i", g->numPlayers, g->drawDeckSize, g->myPosition);
@@ -108,9 +108,16 @@ int main(void)
     );
     parlGame_applyAction(&g, DRAW, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
     parlGame_applyAction(&g, APPOINT_MP, parlSymbolToIdx("3h"), PARL_NO_ARG, PARL_NO_ARG);
-    parlGame_applyAction(&g, IMPEACH_MP, parlSymbolToIdx("3h"), parlSymbolToIdx("4h"), PARL_NO_ARG);
-    parlGame_applyAction(&g, BLOCK_IMPEACH, parlSymbolToIdx("5d"), PARL_NO_ARG, PARL_NO_ARG);
-    parlGame_applyAction(&g, REIMPEACH, parlSymbolToIdx("6d"), PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, IMPEACH_MP, parlSymbolToIdx("3h"), parlSymbolToIdx("4d"), PARL_NO_ARG);
+    parlGame_applyAction(&g, BLOCK_IMPEACH, parlSymbolToIdx("5h"), PARL_NO_ARG, PARL_NO_ARG);
+    //parlGame_applyAction(&g, REIMPEACH, parlSymbolToIdx("6d"), PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, NO_REIMPEACH, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, NO_REIMPEACH, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, NO_REIMPEACH, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, DRAW, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, SELF_DRAW, parlSymbolToIdx("xc"), PARL_NO_ARG, PARL_NO_ARG);
+    parlGame_applyAction(&g, DRAW, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
+
     printParlGame(&g);
     printParlStack(g.faceDownCards);
     parlGame_free(&g);

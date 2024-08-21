@@ -198,7 +198,8 @@ typedef uint64_t ParlStack;
 /**
  * The suit of a `ParlIdx`.
  */
-typedef enum {
+typedef enum
+{
     INVALID_SUIT = -1,
     CLUBS, SPADES,
     HEARTS, DIAMONDS,

@@ -57,51 +57,68 @@
 typedef int ParlPlayer;
 
 /**
+ * Used during elections called by the PM to keep track of where cards came from so that they can be properly removed or
+ * returned depending on the result.
+ */
+typedef enum
+{
+    UNKNOWN, FROM_HAND, FROM_CABINET, FROM_PARL
+} ParlCallingCardOrigin;
+
+/**
  * An action that can be taken in a Parliament game.
  */
-typedef enum {
+typedef enum
+{
     /**
-     * In NORMAL_MODE mode: always legal. Activates DISCARD_AFTER_DRAW_MODE mode if the player's hand size is 10 after drawing.
-     * If it's the known player's turn, `idxA` is the drawn card; otherwise no arguments.
+     * In NORMAL_MODE: always legal. Activates DISCARD_AFTER_DRAW_MODE mode if the player's hand size is 7 after drawing.
+     * No arguments.
      */
     DRAW,
 
     /**
-     * In NORMAL_MODE mode: legal if the player has at least one card in their hand.
+     * In NORMAL_MODE: legal if it's the known player's turn. Activates DISCARD_AFTER_DRAW mode if the player's hand
+     * size is 7 after drawing. `idxA` is the card drawn.
+     */
+    SELF_DRAW,
+
+    /**
+     * In NORMAL_MODE: legal if the player has at least one card in their hand.
      * `idxA` is the discarded card.
-     * In DISCARD_AFTER_DRAW_MODE mode: The only legal action. Activates NORMAL_MODE mode.
+     * In DISCARD_AFTER_DRAW_MODE: The only legal action. Activates NORMAL_MODE.
      */
     DISCARD,
 
     /**
-     * In NORMAL_MODE mode: legal if the player has at least one card in their hand and Parliament is not full. `idxA` is the
+     * In NORMAL_MODE: legal if the player has at least one card in their hand and Parliament is not full. `idxA` is the
      * appointed MP.
      */
     APPOINT_MP,
 
     /**
-     * In NORMAL_MODE mode: legal if the player has at least three cards in their hand. If it's the known player's turn,
-     * they must also have three cards in their hand of the same suit. Activates ELECTION_MODE mode. `idxA` is the PM
-     * candidate, and `idxB` and `idxC` are the calling cards.
+     * In NORMAL_MODE: legal if the player has at least three cards in their hand. If it's the known player's turn,
+     * they must also have three cards in their hand of the same suit. Activates ELECTION_MODE. `idxA` is the PM
+     * candidate, and `idxB` and `idxC` are the calling cards. No calling cards are actually moved anywhere until the
+     * election is over.
      */
     ENTER_ELECTION,
 
     /**
-     * In NORMAL_MODE mode: legal if the player has at least one card in their hand of higher rank than at least one MP.
-     * Activates IMPEACH_MODE mode. `idxA` is the MP being impeached and `idxB` is the card replacing it.
+     * In NORMAL_MODE: legal if the player has at least one card in their hand of higher rank than at least one MP.
+     * Activates IMPEACH_MODE. `idxA` is the MP being impeached and `idxB` is the card replacing it.
      */
     IMPEACH_MP,
 
     /**
-     * In NORMAL_MODE mode: legal if there is a PM and the player has at least one card in their hand. If it's the known
+     * In NORMAL_MODE: legal if there is a PM and the player has at least one card in their hand. If it's the known
      * player's turn, they must also have either a) a king if the PM card is a king, or b) a card higher than the PM.
-     * If Cabinet had at least 2 cards before this was played, REPLACE_PM mode is activated. `idxA` is the card used to
+     * If Cabinet had at least 2 cards before this was played, REPLACE_PM is activated. `idxA` is the card used to
      * impeach.
      */
     IMPEACH_PM,
 
     /**
-     * In NORMAL_MODE mode: legal if the player has at least three cards in their hand. If it's the known player's turn, all
+     * In NORMAL_MODE: legal if the player has at least three cards in their hand. If it's the known player's turn, all
      * three cards must also be of the same rank, and one of them must be of the tied plurality suit. `idxA`, `idxB`,
      * and `idxC` are the cards played.
      */
@@ -114,7 +131,7 @@ typedef enum {
     CABINET_RESHUFFLE,
 
     /**
-     * In NORMAL_MODE mode: legal if the player is the PM and Cabinet isn't empty. `idxA` is the Cabinet member that should
+     * In NORMAL_MODE: legal if the player is the PM and Cabinet isn't empty. `idxA` is the Cabinet member that should
      * be swapped with the PM.
      */
     APPOINT_PM,
@@ -141,7 +158,8 @@ typedef enum {
 /**
  * @brief A Parliament game state from one player's perspective, referred to throughout the code as the "known player".
  */
-typedef struct ParlGame {
+typedef struct ParlGame
+{
     /**
      * The number of players in the game.
      */
@@ -193,7 +211,8 @@ typedef struct ParlGame {
      * In most cases, this is set to `NORMAL_MODE`. When there is a move awaiting a response, like an impeachment or election
      * call, it will be set to one of the other modes.
      */
-    enum ParlGameMode {
+    enum ParlGameMode
+    {
         /**
          * Active when the last impeachment, election, etc. was resolved and it's now the next player's turn.
          */
@@ -237,24 +256,27 @@ typedef struct ParlGame {
          */
         ParlIdx cardToBeatIdx : PARL_IDX_WIDTH;
 
-        /**
-         * Temporary values that are saved through certain sequences of moves.
-         */
-        union {
+        union
+        {
             /**
              * The MP that was originally impeached.
              */
-            ParlIdx impeachedMpIdx : PARL_IDX_WIDTH;
+            ParlIdx impeachedMpIdx: PARL_IDX_WIDTH;
 
-            /**
-             * Values used during elections, in addition to `callingCards`.
-             *
-             *
-             */
-            struct {
-
-            } election;
+            struct ParlPmCallingCardOrigins
+            {
+                ParlCallingCardOrigin pmCandidateOrigin: 2;
+                ParlCallingCardOrigin cabinetAOrigin: 2;
+                ParlCallingCardOrigin cabinetBOrigin: 2;
+            } pmCallingCardOrigins;
         } shared;
+
+        struct ParlElectionCandidate
+        {
+            ParlIdx pmCandidateIdx: PARL_IDX_WIDTH;
+            ParlIdx cabinetAIdx: PARL_IDX_WIDTH;
+            ParlIdx cabinetBIdx: PARL_IDX_WIDTH;
+        } *electionCandidates;
     } temp;
 
     /* Derived information */
@@ -389,5 +411,14 @@ bool parlGame_moveFromHandTo(ParlGame* g, ParlStack* dest, ParlStack s);
  * @param g
  */
 void parlGame_confirmImpeachedMp(ParlGame* g);
+
+/**
+ * @brief Used in elections to obtain the location of the PM's calling cards that may have to be moved around later.
+ * @note For internal use only. Do not call.
+ * @param g
+ * @param i
+ * @return The location of the card `i`.
+ */
+ParlCallingCardOrigin parlGame_cardOrigin(const ParlGame* g, ParlIdx i);
 
 #endif //PARLIAMENT_GAME_H
