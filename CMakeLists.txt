@@ -7,4 +7,7 @@ add_executable(parliament main.c
         cards.c
         cards.h
         game.c
-        game.h)
+        game.h
+        timer.c
+        timer.h
+)
