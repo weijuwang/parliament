@@ -25,6 +25,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+//#define PARL_INVALID_IDX (1u<<5)
+
 /**
  * The number of jokers present in a `ParlStack` will be shifted to this position.
  *
@@ -64,7 +66,7 @@
 #define PARL_SYMBOL_WIDTH 2
 
 /**
- * The minimum width of a ParlIdx in bits. The maximum ParlIdx is 54 and 6 bits are needed to store that.
+ * The minimum width of a ParlIdx in bits. The maximum ParlIdx is 54 which requires 6 bits to store.
  */
 #define PARL_IDX_WIDTH 6
 
@@ -117,10 +119,10 @@
  * Returns whether s0 contains the entirety of s1.
  */
 #define PARL_CONTAINS(s0, s1) ( \
-    ( /* Excluding jokers, s0 and s1 share at least one card, or s1 is empty */ \
-        PARL_WITHOUT_JOKERS((s0) & (s1)) \
-        || !PARL_WITHOUT_JOKERS(s1) \
-    ) && PARL_NUM_JOKERS(s0) >= PARL_NUM_JOKERS(s1))
+    /* Excluding jokers, the cards that s0 and s1 share is the entirety of s1 */ \
+    PARL_WITHOUT_JOKERS((s0) & (s1)) == PARL_WITHOUT_JOKERS(s1)                  \
+    /* s0 has at least as many jokers as s1 */ \
+    && PARL_NUM_JOKERS(s0) >= PARL_NUM_JOKERS(s1))
 
 /**
  * Filter a stack to only cards of a given suit.

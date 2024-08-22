@@ -26,7 +26,7 @@ bool parlGame_init(ParlGame* const g,
         .discard = PARL_EMPTY_STACK,
         .drawDeckSize = PARL_NUM_NON_JOKER_CARDS + numJokers - numPlayers,
         .mode = NORMAL_MODE,
-        .temp.electionCandidates = NULL,
+        .elecCands = NULL,
 
         .knownHands = calloc(numPlayers, sizeof(ParlStack)),
         .faceDownCards = numJokers * PARL_JOKER_CARD
@@ -38,7 +38,7 @@ bool parlGame_init(ParlGame* const g,
         return false;
     g->knownHands[g->myPosition] = PARL_CARD(myFirstCardIdx);
 
-    for(ParlPlayer p = 0; p < numPlayers; ++p)
+    PARL_FOREACH_PLAYER(g, p)
         g->handSizes[p] = 1;
 
     return true;
@@ -47,7 +47,8 @@ bool parlGame_init(ParlGame* const g,
 void parlGame_free(const ParlGame* const g)
 {
     free(g->knownHands);
-    free(g->temp.electionCandidates);
+    if(g->mode == ELECTION_MODE)
+        free(g->elecCands);
 }
 
 bool parlGame_deepCopy(ParlGame* const dest, const ParlGame* const orig)
@@ -110,6 +111,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                     electionLegal:;
 
                     register int numCards;
+
                     PARL_FOREACH_RANK_FROM(r, 0 /* TODO replace with one higher than the highest rank of the plurality suit */)
                     {
                         numCards = 0;
@@ -126,7 +128,7 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                     vncLegal:;
                 }
 
-                if(electionLegal) PARL_ADD_LEGAL_MOVE(ENTER_ELECTION);
+                if(electionLegal) PARL_ADD_LEGAL_MOVE(CALL_ELECTION);
                 if(vncLegal) PARL_ADD_LEGAL_MOVE(VOTE_NO_CONF);
             }
 
@@ -217,6 +219,10 @@ ParlSuit parlGame_plurality(const ParlGame* g)
     PARL_FOREACH_SUIT(s)
     {
         thisSuitSize = parlStackSize(PARL_FILTER_SUIT(g->parliament, s));
+
+        if(!thisSuitSize)
+            continue;
+
         if(thisSuitSize > pluralitySuitSize)
         {
             plurality = s;
@@ -236,7 +242,8 @@ bool parlGame_applyAction(ParlGame* const g,
                           const ParlIdx idxC
                           )
 {
-    register bool myTurn = g->turn == g->myPosition;
+    // TODO Sanity check: idxA, idxB, and idxC must all be diff cards unless they're PARL_NO_ARG
+
     register ParlStack cardA = PARL_CARD(idxA),
         cardB = PARL_CARD(idxB),
         cardC = PARL_CARD(idxC);
@@ -254,7 +261,7 @@ bool parlGame_applyAction(ParlGame* const g,
             DECREASE_HAND_SIZE(-1);
             --g->drawDeckSize;
 
-            if(g->handSizes[g->turn] >= PARL_MAX_CARDS_IN_HAND)
+            if(g->handSizes[g->turn] > PARL_MAX_CARDS_IN_HAND)
             {
                 g->mode = DISCARD_AFTER_DRAW_MODE;
                 goto noIncTurn;
@@ -314,36 +321,39 @@ bool parlGame_applyAction(ParlGame* const g,
             else
                 return false;
 
-        case ENTER_ELECTION:
+        case CALL_ELECTION:
             // All 3 cards must be the same suit
             if(PARL_SUIT(idxA) != PARL_SUIT(idxB) || PARL_SUIT(idxB) != PARL_SUIT(idxC))
                 return false;
 
-            if(g->turn == g->pmPosition)
-            {
-                g->temp.shared.pmCallingCardOrigins = (struct ParlPmCallingCardOrigins){
-                    .pmCandidateOrigin = parlGame_cardOrigin(g, idxA),
-                    .cabinetAOrigin = parlGame_cardOrigin(g, idxB),
-                    .cabinetBOrigin = parlGame_cardOrigin(g, idxC)
-                };
+            ParlCallingCardOrigin cardAOrigin = parlGame_cardOrigin(g, idxA),
+                cardBOrigin = parlGame_cardOrigin(g, idxB),
+                cardCOrigin = parlGame_cardOrigin(g, idxC);
 
-                if(
-                    g->temp.shared.pmCallingCardOrigins.pmCandidateOrigin == UNKNOWN
-                    || g->temp.shared.pmCallingCardOrigins.cabinetAOrigin == UNKNOWN
-                    || g->temp.shared.pmCallingCardOrigins.cabinetBOrigin == UNKNOWN
-                )
-                    return false;
-            } else if(!parlGame_handContains(g, cardA | cardB | cardC))
+            if(
+                (g->turn == g->pmPosition && (cardAOrigin == UNKNOWN || cardBOrigin == UNKNOWN || cardCOrigin == UNKNOWN))
+                || !parlGame_handContains(g, cardA | cardB | cardC)
+            )
                 return false;
 
-            g->temp.electionCandidates = malloc(g->numPlayers * sizeof(struct ParlElectionCandidate));
-            g->temp.electionCandidates[g->turn] = (struct ParlElectionCandidate){
-                .pmCandidateIdx = idxA,
-                .cabinetAIdx = idxB,
-                .cabinetBIdx = idxC
-            };
-            g->mode = ELECTION_MODE;
+            bool cardAFromHand = cardAOrigin == FROM_HAND,
+                cardBFromHand = cardBOrigin == FROM_HAND,
+                cardCFromHand = cardCOrigin == FROM_HAND;
 
+            g->elecCands = malloc(g->numPlayers * sizeof(struct ParlElectionCand));
+            g->elecCands[g->turn] = (struct ParlElectionCand){
+                .pmIdx = idxA,
+                .callingCards = cardA | cardB | cardC,
+                .preCallNumCards = g->handSizes[g->turn]
+            };
+
+            // The hand size will decrease regardless of where the cards go
+            DECREASE_HAND_SIZE(cardAFromHand + cardBFromHand + cardCFromHand);
+
+            g->mode = ELECTION_MODE;
+            g->electionCaller = g->turn;
+            parlGame_saveNextNormalTurn(g);
+            g->turn = g->electionCaller == 0 ? 1 : 0;
             goto noIncTurn;
 
         case IMPEACH_MP:
@@ -354,8 +364,8 @@ bool parlGame_applyAction(ParlGame* const g,
             )
                 return false;
 
-            g->temp.shared.impeachedMpIdx = idxA;
-            g->temp.cardToBeatIdx = idxB;
+            g->impeachedMpIdx = idxA;
+            g->cardToBeatIdx = idxB;
 
             g->mode = BLOCK_IMPEACH_MODE;
             parlGame_saveNextNormalTurn(g);
@@ -432,20 +442,20 @@ bool parlGame_applyAction(ParlGame* const g,
         case BLOCK_IMPEACH:
             if(
                 !parlGame_handContains(g, cardA)
-                || PARL_SUIT(idxA) != PARL_SUIT(g->temp.shared.impeachedMpIdx)
+                || PARL_SUIT(idxA) != PARL_SUIT(g->impeachedMpIdx)
             )
                 return false;
 
-            if(PARL_HIGHER_THAN(idxA, g->temp.cardToBeatIdx))
+            if(PARL_HIGHER_THAN(idxA, g->cardToBeatIdx))
             {
-                g->discard |= PARL_CARD(g->temp.cardToBeatIdx);
+                g->discard |= PARL_CARD(g->cardToBeatIdx);
                 parlGame_removeFromHand(g, cardA);
-                g->temp.cardToBeatIdx = idxA;
+                g->cardToBeatIdx = idxA;
                 g->turn = 0;
                 g->mode = REIMPEACH_MODE;
             }
             else if(
-                g->temp.cardToBeatIdx == PARL_JOKER_IDX
+                g->cardToBeatIdx == PARL_JOKER_IDX
                 && PARL_RANK(idxA) == PARL_ACE_RANK
             )
             {
@@ -458,20 +468,20 @@ bool parlGame_applyAction(ParlGame* const g,
         case REIMPEACH:
             if(
                 !parlGame_handContains(g, cardA)
-                || PARL_SUIT(idxA) != PARL_SUIT(g->temp.shared.impeachedMpIdx)
+                || PARL_SUIT(idxA) != PARL_SUIT(g->impeachedMpIdx)
             )
                 return false;
 
-            if(PARL_HIGHER_THAN(idxA, g->temp.cardToBeatIdx))
+            if(PARL_HIGHER_THAN(idxA, g->cardToBeatIdx))
             {
-                g->discard |= PARL_CARD(g->temp.cardToBeatIdx);
+                g->discard |= PARL_CARD(g->cardToBeatIdx);
                 parlGame_removeFromHand(g, cardA);
-                g->temp.cardToBeatIdx = idxA;
+                g->cardToBeatIdx = idxA;
                 g->turn = 0;
                 g->mode = REIMPEACH_MODE;
             }
             else if(
-                g->temp.cardToBeatIdx == PARL_JOKER_IDX
+                g->cardToBeatIdx == PARL_JOKER_IDX
                 && PARL_RANK(idxA) == PARL_ACE_RANK
                 )
             {
@@ -490,15 +500,165 @@ bool parlGame_applyAction(ParlGame* const g,
             goto noIncTurn;
 
         case CONTEST_ELECTION:
-            // TODO
+            if(!parlGame_handContains(g, cardA | cardB))
+                return false;
+
+            g->elecCands[g->turn] = (struct ParlElectionCand){
+                .pmIdx = idxA,
+                .callingCards = cardA | cardB,
+                .preCallNumCards = g->handSizes[g->turn]
+            };
+
             DECREASE_HAND_SIZE(2);
-            goto noIncTurn;
+
+            goto contestElection;
 
         case NO_CONTEST_ELECTION:
-            if(g->turn < g->numPlayers - 1)
-                goto incTurn;
+            g->elecCands[g->turn].callingCards = PARL_EMPTY_STACK;
+        contestElection:
 
-            // TODO
+            // i.e. not the last player
+            if(g->turn < g->numPlayers - 1)
+            {
+                // If the next player is the election caller, skip them
+                if(g->turn + 1 == g->electionCaller)
+                    ++g->turn;
+                goto incTurn;
+            }
+
+            /* Step 1: Find winners */
+
+            register unsigned int winners = 0u;
+            register int numWinners = 0;
+            register ParlRank highestRank = PARL_ACE_RANK;
+            register ParlRank thisRank;
+
+            PARL_FOREACH_PLAYER(g, p)
+            {
+                // Skip players that didn't run
+                if(g->elecCands[p].callingCards == PARL_EMPTY_STACK)
+                    continue;
+
+                thisRank = PARL_RANK(g->elecCands[p].pmIdx);
+                if(thisRank > highestRank)
+                {
+                    highestRank = thisRank;
+                    winners = 1u<<p;
+                    numWinners = 1;
+                }
+                else if(thisRank == highestRank)
+                {
+                    winners |= 1u<<p;
+                    ++numWinners;
+                }
+            }
+
+            /* Step 2: Tiebreakers */
+
+            register ParlPlayer winner = -1;
+
+            // Multiple winners, have to check Parliament
+            if(numWinners > 1)
+            {
+                register ParlSuit singlePlurality = parlGame_plurality(g);
+
+                // There exists a single plurality suit
+                if(singlePlurality != INVALID_SUIT)
+                    // Find the player p whose PM candidate is of the plurality suit
+                    PARL_FOREACH_PLAYER(g, p)
+                        if(PARL_SUIT(g->elecCands[p].pmIdx) == singlePlurality)
+                        {
+                            /* We don't need to keep searching because it's impossible for two election candidates to
+                             * and be of the same suit -- that would mean they played the same exact PM candidate. If
+                             * we got here, we know this is the only candidate of this suit and thus the winner. */
+                            winner = p;
+                            goto winnerFound;
+                        }
+
+                // Election canceled -- return everyone's calling cards to `knownHands`
+                PARL_FOREACH_PLAYER(g, p)
+                {
+                    if(g->elecCands[p].callingCards == PARL_EMPTY_STACK)
+                        continue;
+
+                    g->faceDownCards &= ~g->elecCands[p].callingCards;
+                    g->knownHands[p] |= g->elecCands[p].callingCards;
+                    g->handSizes[p] = g->elecCands[p].preCallNumCards;
+                }
+
+                goto cancelElection;
+            }
+            // Only one winner -- find out who it is
+            else PARL_FOREACH_PLAYER(g, p)
+                if(winners & (1u<<p))
+                {
+                    winner = p;
+                    break;
+                }
+
+            winnerFound:;
+
+            /* Step 3: Discard losing candidates' calling cards, confirm new PM */
+
+            if(g->pmPosition != PARL_NO_PM)
+            {
+                // Remove PM's calling cards from hand
+                parlRemoveCardsPartial(&g->knownHands[g->pmPosition], g->elecCands[g->pmPosition].callingCards);
+                parlRemoveCardsPartial(&g->faceDownCards, g->elecCands[g->pmPosition].callingCards);
+            }
+
+            PARL_FOREACH_PLAYER(g, p)
+            {
+                if(g->elecCands[p].callingCards == PARL_EMPTY_STACK)
+                    continue;
+
+                if(p == winner)
+                {
+                    /* p was and remains PM */
+                    if(p == g->pmPosition)
+                    {
+                        // Move calling cards and old PM card to cabinet -- new PM card is now somewhere in cabinet
+                        g->cabinet |= g->elecCands[p].callingCards | PARL_CARD(g->pmCardIdx);
+                        // Remove new PM card from Cabinet
+                        g->cabinet &= ~PARL_CARD(g->elecCands[p].pmIdx);
+                        // Update PM card
+                        g->pmCardIdx = g->elecCands[p].pmIdx;
+                    }
+                    /* No PM until now or PM lost election */
+                    else
+                    {
+                        // Remove calling cards from hand
+                        parlGame_removeFromHandOf(g, g->elecCands[p].callingCards, p);
+
+                        // Update PM
+                        g->pmPosition = p;
+                        g->pmCardIdx = g->elecCands[p].pmIdx;
+                        g->cabinet = g->elecCands[p].callingCards & ~PARL_CARD(g->elecCands[p].pmIdx);
+                    }
+                }
+                /* p was PM but lost election */
+                else if(p == g->pmPosition)
+                {
+                    // Discard PM card and Cabinet
+                    g->discard |= PARL_CARD(g->pmCardIdx) | g->cabinet;
+                    // PM's calling cards were already removed from hand earlier
+                }
+                /* Non-PM player who lost election */
+                else
+                {
+                    // Remove calling cards from hand
+                    parlGame_removeFromHandOf(g, g->elecCands[p].callingCards, p);
+                    // Discard calling cards
+                    g->discard |= g->elecCands[p].callingCards;
+                }
+            }
+
+            cancelElection:
+
+            free(g->elecCands);
+            g->elecCands = NULL;
+
+            parlGame_revertToNormalTurn(g);
             goto noIncTurn;
 
         case APPOINT_BACKUP_PM:
@@ -529,18 +689,32 @@ bool parlGame_handContains(const ParlGame* g, const ParlStack s)
             PARL_NUM_JOKERS(g->faceDownCards) + PARL_NUM_JOKERS(g->knownHands[g->turn]);
 }
 
-void parlGame_saveNextNormalTurn(ParlGame* g)
+void parlGame_saveNextNormalTurn(ParlGame* const g)
 {
-    g->temp.nextNormalTurn = PARL_NEXT_TURN(g);
+    g->nextNormalTurn = PARL_NEXT_TURN(g);
 }
 
-bool parlGame_removeFromHand(ParlGame* g, const ParlStack s)
+void parlGame_revertToNormalTurn(ParlGame* const g)
+{
+    g->mode = NORMAL_MODE;
+    g->turn = g->nextNormalTurn;
+}
+
+bool parlGame_removeFromHand(ParlGame* const g, const ParlStack s)
+{
+    if(!parlGame_removeFromHandOf(g, s, g->turn))
+        return false;
+
+    DECREASE_HAND_SIZE(parlStackSize(s));
+    return true;
+}
+
+bool parlGame_removeFromHandOf(ParlGame* const g, const ParlStack s, const ParlPlayer p)
 {
     if(!parlGame_handContains(g, s))
         return false;
 
-    DECREASE_HAND_SIZE(parlStackSize(s));
-    parlRemoveCardsPartial(&g->knownHands[g->turn], s);
+    parlRemoveCardsPartial(&g->knownHands[p], s);
     parlRemoveCardsPartial(&g->faceDownCards, s);
 
     return true;
@@ -548,27 +722,18 @@ bool parlGame_removeFromHand(ParlGame* g, const ParlStack s)
 
 bool parlGame_moveFromHandTo(ParlGame* const g, ParlStack* const dest, const ParlStack s)
 {
-    /*
-     * TODO Should these be partial moves instead? Check with parlGame_removeFromHand()
-     */
-    if(
-        parlMoveCards(dest,&(g->knownHands[g->turn]),s)
-        || parlMoveCards(dest,&g->faceDownCards,s)
-    )
-    {
-        DECREASE_HAND_SIZE(parlStackSize(s));
-        return true;
-    }
+    if(!parlGame_removeFromHand(g, s))
+        return false;
 
-    return false;
+    *dest += s;
+    return true;
 }
 
 void parlGame_confirmImpeachedMp(ParlGame* const g)
 {
-    parlMoveCards(&g->discard, &g->parliament, PARL_CARD(g->temp.shared.impeachedMpIdx));
-    g->parliament |= PARL_CARD(g->temp.cardToBeatIdx);
-    g->mode = NORMAL_MODE;
-    g->turn = g->temp.nextNormalTurn;
+    parlMoveCards(&g->discard, &g->parliament, PARL_CARD(g->impeachedMpIdx));
+    g->parliament |= PARL_CARD(g->cardToBeatIdx);
+    parlGame_revertToNormalTurn(g);
 }
 
 ParlCallingCardOrigin parlGame_cardOrigin(const ParlGame* const g, const ParlIdx i)

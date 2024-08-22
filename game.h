@@ -52,6 +52,11 @@
 #define PARL_NEXT_TURN(g) ((g)->turn >= (g)->numPlayers - 1 ? 0 : (g)->turn + 1)
 
 /**
+ * Iterates through all player indices in the game.
+ */
+#define PARL_FOREACH_PLAYER(g, p) for(register ParlPlayer p = 0; p < (g)->numPlayers; ++p)
+
+/**
  * The index of a player.
  */
 typedef int ParlPlayer;
@@ -101,7 +106,7 @@ typedef enum
      * candidate, and `idxB` and `idxC` are the calling cards. No calling cards are actually moved anywhere until the
      * election is over.
      */
-    ENTER_ELECTION,
+    CALL_ELECTION,
 
     /**
      * In NORMAL_MODE: legal if the player has at least one card in their hand of higher rank than at least one MP.
@@ -205,7 +210,7 @@ typedef struct ParlGame
     /**
      * The size of the draw deck.
      */
-    int drawDeckSize;
+    unsigned int drawDeckSize : 6;
 
     /**
      * In most cases, this is set to `NORMAL_MODE`. When there is a move awaiting a response, like an impeachment or election
@@ -244,47 +249,39 @@ typedef struct ParlGame
         BACKUP_PM_MODE
     } mode : 3;
 
-    struct ParlGameTemp
-    {
-        /**
-         * The player that will have the turn after this impeachment or election is resolved.
-         */
-        ParlPlayer nextNormalTurn : PARL_PLAYER_WIDTH;
+    /**
+     * The player that will have the turn after this impeachment or election is resolved.
+     */
+    ParlPlayer nextNormalTurn : PARL_PLAYER_WIDTH;
 
-        /**
-         * The card to beat in the stack.
-         */
-        ParlIdx cardToBeatIdx : PARL_IDX_WIDTH;
+    /**
+     * The card to beat in the stack.
+     */
+    ParlIdx cardToBeatIdx : PARL_IDX_WIDTH;
 
-        union
-        {
-            /**
-             * The MP that was originally impeached.
-             */
-            ParlIdx impeachedMpIdx: PARL_IDX_WIDTH;
+    /**
+     * The MP that was originally impeached.
+     */
+    ParlIdx impeachedMpIdx: PARL_IDX_WIDTH;
 
-            struct ParlPmCallingCardOrigins
-            {
-                ParlCallingCardOrigin pmCandidateOrigin: 2;
-                ParlCallingCardOrigin cabinetAOrigin: 2;
-                ParlCallingCardOrigin cabinetBOrigin: 2;
-            } pmCallingCardOrigins;
-        } shared;
+    /**
+     * The player who called this election.
+     */
+    ParlPlayer electionCaller : PARL_PLAYER_WIDTH;
 
-        struct ParlElectionCandidate
-        {
-            ParlIdx pmCandidateIdx: PARL_IDX_WIDTH;
-            ParlIdx cabinetAIdx: PARL_IDX_WIDTH;
-            ParlIdx cabinetBIdx: PARL_IDX_WIDTH;
-        } *electionCandidates;
-    } temp;
+    /**
+     * A dynamically allocated array of all the candidates in this election.
+     */
+    struct ParlElectionCand {
+        ParlStack callingCards;
+        ParlIdx pmIdx : PARL_IDX_WIDTH;
+        ParlIdx preCallNumCards : PARL_IDX_WIDTH;
+    } *elecCands;
 
     /* Derived information */
 
     /**
      * The size of each player's hand.
-     *
-     * TODO Is this better as int_fast8_t or int8_t?
      */
     int8_t handSizes[PARL_MAX_NUM_PLAYERS];
 
@@ -387,6 +384,15 @@ bool parlGame_handContains(const ParlGame* g, ParlStack s);
 void parlGame_saveNextNormalTurn(ParlGame* g);
 
 /**
+ * @brief Runs these lines of code:
+ * g->mode = NORMAL_MODE;
+ * g->turn = g->nextNormalTurn;
+ * @note For internal use only. Do not call.
+ * @param g
+ */
+void parlGame_revertToNormalTurn(ParlGame* g);
+
+/**
  * @brief Removes `s` from the hand of the player whose turn it is.
  * @note For internal use only. Do not call.
  * @param g
@@ -394,6 +400,16 @@ void parlGame_saveNextNormalTurn(ParlGame* g);
  * @return Whether the operation was successful.
  */
 bool parlGame_removeFromHand(ParlGame* g, ParlStack s);
+
+/**
+ * @brief Removes `s` from the hand of the specified player.
+ * @note For internal use only. Do not call.
+ * @param g
+ * @param s
+ * @param p
+ * @return Whether the operation was successful.
+ */
+bool parlGame_removeFromHandOf(ParlGame* g, ParlStack s, ParlPlayer p);
 
 /**
  * @brief Moves `s` from the hand of the player whose turn it is to `dest`.
