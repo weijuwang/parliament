@@ -10,6 +10,7 @@
 /*
  * TODO Possible future optimizations:
  * - Make knownHands the same size every time so we don't need to call `calloc`, which is slow afaik
+ * - Get rid of modes, just precompute legal moves at the end of every action
  */
 
 #ifndef PARLIAMENT_GAME_H
@@ -73,7 +74,7 @@ typedef enum
 /**
  * An action that can be taken in a Parliament game.
  */
-typedef enum
+typedef enum ParlAction
 {
     /**
      * In NORMAL_MODE: always legal. Activates DISCARD_AFTER_DRAW_MODE mode if the player's hand size is 7 after drawing.
@@ -157,7 +158,26 @@ typedef enum
      * In BACKUP_PM_MODE mode: The only legal action. Activates NORMAL_MODE mode and reverts the turn to whoever was going to go
      * next after the PM impeachment.
      */
-    APPOINT_BACKUP_PM
+    APPOINT_BACKUP_PM,
+
+    ENDGAME_PM_FIRST,
+
+    ENDGAME_PM_LAST,
+
+    /**
+     * In ENDGAME mode: `idxA` is the PM candidate; if it's the PM's turn then no args.
+     */
+    ENDGAME_TRY_FORMATION,
+
+    ENDGAME_PASS_FORMATION,
+
+    ENDGAME_BLOCK_COALITION,
+
+    ENDGAME_COUNTER_BLOCK_COALITION,
+
+    ENDGAME_NO_BLOCK_COALITION,
+
+    ENDGAME_NO_COUNTER_BLOCK_COALITION,
 } ParlAction;
 
 /**
@@ -246,13 +266,27 @@ typedef struct ParlGame
         /**
          * Active when the PM card has been impeached and the PM must choose between 2 or more Cabinet members to replace the PM card.
          */
-        BACKUP_PM_MODE
-    } mode : 3;
+        BACKUP_PM_MODE,
+
+        ENDGAME_MODE,
+
+        PM_CHOOSE_FIRST_LAST_MODE,
+
+        BLOCK_COALITION_MODE,
+
+        COUNTER_BLOCK_COALITION_MODE,
+
+        GAME_OVER
+    } mode : 4;
+
+    unsigned int coalitionSize : 6;
+
+    bool endgameSkipPm : 1;
 
     /**
-     * The player that will have the turn after this impeachment or election is resolved.
+     * The player that will had the turn before this impeachment or election chain started.
      */
-    ParlPlayer nextNormalTurn : PARL_PLAYER_WIDTH;
+    ParlPlayer currNormalTurn : PARL_PLAYER_WIDTH;
 
     /**
      * The card to beat in the stack.
@@ -265,9 +299,9 @@ typedef struct ParlGame
     ParlIdx impeachedMpIdx: PARL_IDX_WIDTH;
 
     /**
-     * The player who called this election.
+     * The player who called this election or was the first to play in endgame.
      */
-    ParlPlayer electionCaller : PARL_PLAYER_WIDTH;
+    ParlPlayer cycleStarter : PARL_PLAYER_WIDTH;
 
     /**
      * A dynamically allocated array of all the candidates in this election.
@@ -377,20 +411,40 @@ bool parlGame_applyAction(ParlGame* g,
 bool parlGame_handContains(const ParlGame* g, ParlStack s);
 
 /**
- * @brief Runs this line of code: g->temp.nextNormalTurn = PARL_NEXT_TURN(g);
+ * @brief Runs this line of code: g->turn = PARL_NEXT_TURN(g);
  * @note For internal use only. Do not call.
  * @param g
  */
-void parlGame_saveNextNormalTurn(ParlGame* g);
+void parlGame_incTurn(ParlGame* const g);
+
+/**
+ * Runs parlGame_incTurn and runs it again if the PM needs to be skipped.
+ * @param g
+ */
+void parlGame_incTurnEndgame(ParlGame* const g);
+
+/**
+ * @brief Runs this line of code: g->currNormalTurn = g->turn;
+ * @note For internal use only. Do not call.
+ * @param g
+ */
+void parlGame_saveNormalTurn(ParlGame *const g);
 
 /**
  * @brief Runs these lines of code:
  * g->mode = NORMAL_MODE;
- * g->turn = g->nextNormalTurn;
+ * g->turn = g->currNormalTurn;
  * @note For internal use only. Do not call.
  * @param g
  */
-void parlGame_revertToNormalTurn(ParlGame* g);
+void parlGame_revertToNormalModeAndTurn(ParlGame *const g);
+
+/**
+ * Moves the game state to endgame.
+ * @note For internal use only. Do not call.
+ * @param g
+ */
+void parlGame_moveToEndgame(ParlGame* g);
 
 /**
  * @brief Removes `s` from the hand of the player whose turn it is.

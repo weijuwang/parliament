@@ -10,6 +10,11 @@ const ParlCardSymbol PARL_JOKER_SYMBOL = "zz";
 
 const char PARL_SUIT_SYMBOLS[5] = "cshdj";
 
+const ParlSuit PARL_COALITION_PARTNERS[4] = {
+    [CLUBS] = SPADES, [SPADES] = CLUBS,
+    [HEARTS] = DIAMONDS, [DIAMONDS] = HEARTS
+};
+
 int parlStackSize(const ParlStack s)
 {
     register int numNonJokers = 0;

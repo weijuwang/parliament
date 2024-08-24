@@ -2,6 +2,10 @@
 // Created by Weiju Wang on 8/17/24.
 //
 
+/*
+ * TODO If ace beats joker it automatically wins the cycle
+ */
+
 #include "game.h"
 
 #include <stdlib.h>
@@ -70,8 +74,8 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
     switch(g->mode)
     {
         case NORMAL_MODE:;
-            register unsigned int legalMoves = g->turn == g->myPosition ? 1u<<SELF_DRAW : 1u<<DRAW;
-            #define PARL_ADD_LEGAL_MOVE(m) legalMoves += 1u<<m
+            register unsigned int legalMoves = 0u;
+            #define PARL_ADD_LEGAL_MOVE(m) legalMoves |= 1u<<m
 
             const register int handSize = g->handSizes[g->turn];
             const register int parlSize = parlStackSize(g->parliament);
@@ -87,6 +91,9 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                     PARL_ADD_LEGAL_MOVE(CABINET_RESHUFFLE);
             }
 
+            if(handSize <= PARL_MAX_CARDS_IN_HAND)
+                PARL_ADD_LEGAL_MOVE(g->turn == g->myPosition ? 1u<<SELF_DRAW : 1u<<DRAW);
+
             // All actions below here require a non-empty hand
             if(!handSize)
                 return legalMoves;
@@ -101,32 +108,40 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
                 register bool electionLegal = true;
                 register bool vncLegal = true;
 
-                if(myTurn)
+                PARL_FOREACH_SUIT(s)
+                    if (parlStackSize(PARL_FILTER_SUIT(playerHand + g->faceDownCards, s)) >= 3)
+                        goto electionLegal;
+
+                electionLegal = false;
+                electionLegal:;
+
+                register int numCards;
+                register bool matchesPluralitySuit;
+                register unsigned int pluralitySuits = parlGame_tiedPluralities(g);
+
+                PARL_FOREACH_RANK_FROM(r, 0)
                 {
+                    numCards = 0;
+                    matchesPluralitySuit = false;
+
                     PARL_FOREACH_SUIT(s)
-                        if (parlStackSize(PARL_FILTER_SUIT(playerHand, s)) >= 3)
-                            goto electionLegal;
-
-                    electionLegal = false;
-                    electionLegal:;
-
-                    register int numCards;
-
-                    PARL_FOREACH_RANK_FROM(r, 0 /* TODO replace with one higher than the highest rank of the plurality suit */)
                     {
-                        numCards = 0;
+                        if(parlGame_handContains(g, PARL_RS_TO_CARD(r, s)))
+                            ++numCards;
 
-                        PARL_FOREACH_SUIT(s)
-                            if(PARL_CONTAINS(playerHand, PARL_RS_TO_CARD(r, s)))
-                                ++numCards;
-
-                        if(numCards >= 3)
-                            goto vncLegal;
+                        if(
+                            ((1u<<s) & pluralitySuits)
+                            && (PARL_FILTER_SUIT(g->parliament, s) >> PARL_RS_TO_IDX(r, s))
+                        )
+                            matchesPluralitySuit = true;
                     }
 
-                    vncLegal = false;
-                    vncLegal:;
+                    if(numCards >= 3 && matchesPluralitySuit)
+                        goto vncLegal;
                 }
+
+                vncLegal = false;
+                vncLegal:;
 
                 if(electionLegal) PARL_ADD_LEGAL_MOVE(CALL_ELECTION);
                 if(vncLegal) PARL_ADD_LEGAL_MOVE(VOTE_NO_CONF);
@@ -134,27 +149,24 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
 
             if(g->pmPosition != PARL_NO_PM)
             {
-                if(myTurn)
+                const register ParlRank pmCardRank = PARL_RANK(g->pmCardIdx);
+
+                // Kings can impeach kings
+                if(pmCardRank == PARL_KING_RANK)
                 {
-                    const register ParlRank pmCardRank = PARL_RANK(g->pmCardIdx);
-
-                    // Kings can impeach kings
-                    if(pmCardRank == PARL_KING_RANK)
-                    {
-                        PARL_FOREACH_SUIT(s)
-                            if(PARL_CONTAINS(playerHand, PARL_RS_TO_CARD(PARL_KING_RANK, s)))
-                                goto impeachPmLegal;
-                    }
-                    else
-                    {
-                        PARL_FOREACH_RANK_FROM(r, pmCardRank + 1)
-                            PARL_FOREACH_SUIT(s)
-                                if(PARL_CONTAINS(playerHand, PARL_RS_TO_CARD(r, s)))
-                                    goto impeachPmLegal;
-                    }
-
-                    goto impeachPmIllegal;
+                    PARL_FOREACH_SUIT(s)
+                        if(parlGame_handContains(g, PARL_RS_TO_CARD(PARL_KING_RANK, s)))
+                            goto impeachPmLegal;
                 }
+                else
+                {
+                    PARL_FOREACH_RANK_FROM(r, pmCardRank + 1)
+                        PARL_FOREACH_SUIT(s)
+                            if(parlGame_handContains(g, PARL_RS_TO_CARD(r, s)))
+                                goto impeachPmLegal;
+                }
+
+                goto impeachPmIllegal;
 
                 impeachPmLegal: PARL_ADD_LEGAL_MOVE(IMPEACH_PM);
                 impeachPmIllegal:;
@@ -162,14 +174,12 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
 
             if(handSize > 0 && parlSize)
             {
-                if(myTurn)
-                {
-                    PARL_FOREACH_IN_STACK(g->parliament, mp)
-                        PARL_FOREACH_IN_STACK(playerHand, h)
-                            if(PARL_HIGHER_THAN(h, mp))
-                                goto impeachMpLegal;
-                    goto impeachMpIllegal;
-                }
+                PARL_FOREACH_IN_STACK(g->parliament, mp)
+                    PARL_FOREACH_IN_STACK(playerHand + g->faceDownCards, h)
+                        if(PARL_HIGHER_THAN(h, mp))
+                            goto impeachMpLegal;
+                goto impeachMpIllegal;
+
                 impeachMpLegal:
                 PARL_ADD_LEGAL_MOVE(IMPEACH_MP);
                 impeachMpIllegal:;
@@ -179,14 +189,22 @@ unsigned int parlGame_legalActions(const ParlGame* const g)
         case DISCARD_AFTER_DRAW_MODE:
             return 1u<<DISCARD;
         case REIMPEACH_MODE:
-            return (1u<<REIMPEACH) + (1u << NO_REIMPEACH);
+            return (1u<<REIMPEACH) | (1u << NO_REIMPEACH);
         case BLOCK_IMPEACH_MODE:
-            return (1u<<BLOCK_IMPEACH) + (1u << NO_BLOCK_IMPEACH);
+            return (1u<<BLOCK_IMPEACH) | (1u << NO_BLOCK_IMPEACH);
         case ELECTION_MODE:
-            return (1u<<CONTEST_ELECTION) + (1u<<NO_CONTEST_ELECTION);
+            return (1u<<CONTEST_ELECTION) | (1u<<NO_CONTEST_ELECTION);
         case BACKUP_PM_MODE:
             return 1u<<APPOINT_PM;
-        default:
+        case ENDGAME_MODE:
+            return (1u<<ENDGAME_TRY_FORMATION) | (1u<<ENDGAME_PASS_FORMATION);
+        case PM_CHOOSE_FIRST_LAST_MODE:
+            return (1u<<ENDGAME_PM_FIRST) | (1u<<ENDGAME_PM_LAST);
+        case BLOCK_COALITION_MODE:
+            return (1u<<ENDGAME_BLOCK_COALITION) | (1u<<ENDGAME_NO_BLOCK_COALITION);
+        case COUNTER_BLOCK_COALITION_MODE:
+            return (1u<<ENDGAME_COUNTER_BLOCK_COALITION) | (1u<<ENDGAME_NO_COUNTER_BLOCK_COALITION);
+        case GAME_OVER:
             return 0;
     }
 }
@@ -262,11 +280,12 @@ bool parlGame_applyAction(ParlGame* const g,
             --g->drawDeckSize;
 
             if(g->handSizes[g->turn] > PARL_MAX_CARDS_IN_HAND)
-            {
                 g->mode = DISCARD_AFTER_DRAW_MODE;
-                goto noIncTurn;
-            }
-            goto incTurn;
+            else if(g->drawDeckSize == 0)
+                parlGame_moveToEndgame(g);
+            else
+                parlGame_incTurn(g);
+            return true;
 
         case IMPEACH_PM:
             g->discard += PARL_CARD(g->pmCardIdx);
@@ -292,7 +311,7 @@ bool parlGame_applyAction(ParlGame* const g,
                     break;
                 default:
                     g->mode = BACKUP_PM_MODE;
-                    parlGame_saveNextNormalTurn(g);
+                    parlGame_saveNormalTurn(g);
                     break;
             }
 
@@ -307,19 +326,28 @@ bool parlGame_applyAction(ParlGame* const g,
                 // replacement of the PM card.
                 case BACKUP_PM_MODE:
                     g->turn = g->pmPosition;
-                    goto noIncTurn;
+                    return true;
 
                 case DISCARD_AFTER_DRAW_MODE:
+                    if(!g->drawDeckSize)
+                    {
+                        parlGame_moveToEndgame(g);
+                        return true;
+                    }
+
                     g->mode = NORMAL_MODE;
+                    // Fallthrough to default
                 default:
-                    goto incTurn;
+                    parlGame_incTurn(g);
+                    return true;
             }
 
         case APPOINT_MP:
-            if(parlGame_moveFromHandTo(g, &g->parliament, cardA))
-                goto incTurn;
-            else
+            if(!parlGame_moveFromHandTo(g, &g->parliament, cardA))
                 return false;
+
+            parlGame_incTurn(g);
+            return true;
 
         case CALL_ELECTION:
             // All 3 cards must be the same suit
@@ -351,10 +379,10 @@ bool parlGame_applyAction(ParlGame* const g,
             DECREASE_HAND_SIZE(cardAFromHand + cardBFromHand + cardCFromHand);
 
             g->mode = ELECTION_MODE;
-            g->electionCaller = g->turn;
-            parlGame_saveNextNormalTurn(g);
-            g->turn = g->electionCaller == 0 ? 1 : 0;
-            goto noIncTurn;
+            g->cycleStarter = g->turn;
+            parlGame_saveNormalTurn(g);
+            g->turn = g->cycleStarter == 0 ? 1 : 0;
+            return true;
 
         case IMPEACH_MP:
             if(
@@ -368,9 +396,9 @@ bool parlGame_applyAction(ParlGame* const g,
             g->cardToBeatIdx = idxB;
 
             g->mode = BLOCK_IMPEACH_MODE;
-            parlGame_saveNextNormalTurn(g);
+            parlGame_saveNormalTurn(g);
             g->turn = 0;
-            goto noIncTurn;
+            return true;
 
         case VOTE_NO_CONF:;
             if(!parlGame_removeFromHand(g, cardA + cardB + cardC))
@@ -418,7 +446,8 @@ bool parlGame_applyAction(ParlGame* const g,
             g->pmCardIdx = PARL_NO_PM;
             g->cabinet = PARL_EMPTY_STACK;
 
-            goto incTurn;
+            parlGame_incTurn(g);
+            return true;
 
         case CABINET_RESHUFFLE:
             if(!PARL_CONTAINS(g->cabinet, cardA) || !PARL_CONTAINS(g->parliament, cardB))
@@ -429,15 +458,17 @@ bool parlGame_applyAction(ParlGame* const g,
             // "Move to Parliament from Cabinet card A"
             parlMoveCards(&g->parliament, &g->cabinet, cardA);
 
-            goto incTurn;
+            parlGame_incTurn(g);
+            return true;
 
         case APPOINT_PM:
-            if(PARL_CONTAINS(g->cabinet, cardA))
-            {
-                g->cabinet |= PARL_CARD(g->pmCardIdx);
-                g->pmCardIdx = idxA;
-                goto incTurn;
-            } else return false;
+            if(!PARL_CONTAINS(g->cabinet, cardA))
+                return false;
+
+            g->cabinet |= PARL_CARD(g->pmCardIdx);
+            g->pmCardIdx = idxA;
+            parlGame_incTurn(g);
+            return true;
 
         case BLOCK_IMPEACH:
             if(
@@ -463,7 +494,7 @@ bool parlGame_applyAction(ParlGame* const g,
             }
             else return false;
 
-            goto noIncTurn;
+            return true;
 
         case REIMPEACH:
             if(
@@ -489,15 +520,16 @@ bool parlGame_applyAction(ParlGame* const g,
             }
             else return false;
 
-            goto noIncTurn;
+            return true;
 
         case NO_REIMPEACH:
         case NO_BLOCK_IMPEACH:
-            if(g->turn < g->numPlayers - 1)
-                goto incTurn;
+            parlGame_incTurn(g);
 
-            parlGame_confirmImpeachedMp(g);
-            goto noIncTurn;
+            if(g->turn == 0)
+                parlGame_confirmImpeachedMp(g);
+
+            return true;
 
         case CONTEST_ELECTION:
             if(!parlGame_handContains(g, cardA | cardB))
@@ -517,14 +549,18 @@ bool parlGame_applyAction(ParlGame* const g,
             g->elecCands[g->turn].callingCards = PARL_EMPTY_STACK;
         contestElection:
 
-            // i.e. not the last player
+            // If not the last player
             if(g->turn < g->numPlayers - 1)
             {
                 // If the next player is the election caller, skip them
-                if(g->turn + 1 == g->electionCaller)
+                if(g->turn + 1 == g->cycleStarter)
                     ++g->turn;
-                goto incTurn;
+
+                parlGame_incTurn(g);
+                return true;
             }
+
+            /* Last player, so no more candidates. Election is over */
 
             /* Step 1: Find winners */
 
@@ -658,8 +694,9 @@ bool parlGame_applyAction(ParlGame* const g,
             free(g->elecCands);
             g->elecCands = NULL;
 
-            parlGame_revertToNormalTurn(g);
-            goto noIncTurn;
+            parlGame_revertToNormalModeAndTurn(g);
+            parlGame_incTurn(g);
+            return true;
 
         case APPOINT_BACKUP_PM:
             if(parlRemoveCards(&g->cabinet, cardA))
@@ -667,14 +704,115 @@ bool parlGame_applyAction(ParlGame* const g,
 
             g->pmCardIdx = idxA;
             g->mode = NORMAL_MODE;
-            goto incTurn;
+            parlGame_incTurn(g);
+            return true;
+
+        case ENDGAME_TRY_FORMATION:
+            if(g->pmPosition == PARL_NO_PM && !parlGame_removeFromHand(g, cardA))
+                return false;
+
+            const register ParlIdx pmCandIdx = g->pmPosition == PARL_NO_PM ? idxA : g->pmCardIdx;
+
+            g->discard |= pmCandIdx;
+            g->cardToBeatIdx = pmCandIdx;
+
+            g->coalitionSize = parlStackSize(PARL_FILTER_SUIT(g->parliament, PARL_SUIT(idxA)));
+
+            // PM card counts as MP for the PM
+            if(g->pmPosition != PARL_NO_PM)
+                ++g->coalitionSize;
+
+            // Majority w/o blocking?
+            if(g->coalitionSize > g->numPlayers)
+            {
+                g->mode = GAME_OVER;
+                return true;
+            }
+
+            // Needs coalition -- wait for blocks
+            parlGame_saveNormalTurn(g);
+            g->turn = 0;
+            g->mode = BLOCK_COALITION_MODE;
+            return true;
+
+        case ENDGAME_PASS_FORMATION:
+            parlGame_incTurnEndgame(g);
+            return true;
+
+        case ENDGAME_PM_FIRST:
+            // Turn is currently set to PM
+            g->cycleStarter = g->pmPosition;
+            g->mode = ENDGAME_MODE;
+            g->endgameSkipPm = false;
+            return true;
+
+        case ENDGAME_PM_LAST:
+            // Turn is currently set to PM
+            g->cycleStarter = PARL_NEXT_TURN(g);
+            g->mode = ENDGAME_MODE;
+            g->endgameSkipPm = true;
+
+            parlGame_incTurn(g);
+            return true;
+
+        case ENDGAME_BLOCK_COALITION:
+            if(
+                !PARL_HIGHER_THAN(idxA, g->cardToBeatIdx)
+                || PARL_SUIT(idxA) != PARL_SUIT(g->cardToBeatIdx)
+                || !parlGame_handContains(g, cardA)
+            )
+                return false;
+
+            g->discard |= g->cardToBeatIdx;
+            g->cardToBeatIdx = idxA;
+            g->turn = g->currNormalTurn;
+            g->mode = COUNTER_BLOCK_COALITION_MODE;
+            return true;
+
+        case ENDGAME_NO_BLOCK_COALITION:
+            parlGame_incTurn(g);
+
+            if(g->turn == 0)
+            {
+                if(
+                    g->coalitionSize
+                    + parlStackSize(
+                        PARL_FILTER_SUIT(g->parliament,
+                            PARL_COALITION_PARTNERS[PARL_SUIT(g->cardToBeatIdx)]
+                        )
+                    )
+                    <= g->numPlayers
+                )
+                    goto coalitionFail;
+
+                g->mode = GAME_OVER;
+                g->turn = g->currNormalTurn;
+            }
+            return true;
+
+        case ENDGAME_COUNTER_BLOCK_COALITION:
+            if(
+                !PARL_HIGHER_THAN(idxA, g->cardToBeatIdx)
+                || PARL_SUIT(idxA) != PARL_SUIT(g->cardToBeatIdx)
+                || !parlGame_handContains(g, cardA)
+            )
+                return false;
+
+            g->discard |= g->cardToBeatIdx;
+            g->cardToBeatIdx = idxA;
+            g->turn = 0;
+            g->mode = BLOCK_COALITION_MODE;
+            return true;
+
+        case ENDGAME_NO_COUNTER_BLOCK_COALITION:
+        coalitionFail:
+            g->mode = ENDGAME_MODE;
+            g->discard |= g->cardToBeatIdx;
+            parlGame_revertToNormalModeAndTurn(g);
+            parlGame_incTurnEndgame(g);
+
+            return true;
     }
-
-    incTurn:
-        g->turn = PARL_NEXT_TURN(g);
-    noIncTurn:
-
-    return true;
 }
 
 bool parlGame_handContains(const ParlGame* g, const ParlStack s)
@@ -689,15 +827,75 @@ bool parlGame_handContains(const ParlGame* g, const ParlStack s)
             PARL_NUM_JOKERS(g->faceDownCards) + PARL_NUM_JOKERS(g->knownHands[g->turn]);
 }
 
-void parlGame_saveNextNormalTurn(ParlGame* const g)
+void parlGame_incTurn(ParlGame* const g)
 {
-    g->nextNormalTurn = PARL_NEXT_TURN(g);
+    g->turn = PARL_NEXT_TURN(g);
 }
 
-void parlGame_revertToNormalTurn(ParlGame* const g)
+void parlGame_incTurnEndgame(ParlGame* const g)
+{
+    // If the PM chose to play last and the PM just went
+    if(g->turn == g->pmPosition && g->endgameSkipPm)
+        goto dissolveParliament;
+
+    parlGame_incTurn(g);
+
+    // If next player is PM and we're supposed to skip the PM (b/c they chose to play last)
+    if(g->turn == g->pmPosition && g->endgameSkipPm)
+        parlGame_incTurn(g);
+
+    // If we've gotten to all players
+    if(g->turn == g->cycleStarter)
+    {
+        // ...but not the PM? Then the PM needs to have a go
+        if(g->endgameSkipPm)
+            g->turn = g->pmPosition;
+        // ...including the PM? Then dissolve Parliament
+        else
+        {
+            dissolveParliament:
+
+            g->pmPosition = PARL_NO_PM;
+
+            // Move entire discard pile to draw deck
+            g->drawDeckSize = parlStackSize(g->discard);
+            parlMoveCards(&g->faceDownCards, &g->discard, g->discard);
+
+            g->turn = g->cycleStarter;
+            g->mode = NORMAL_MODE;
+        }
+    }
+}
+
+void parlGame_saveNormalTurn(ParlGame *const g)
+{
+    g->currNormalTurn = g->turn;
+}
+
+void parlGame_revertToNormalModeAndTurn(ParlGame *const g)
 {
     g->mode = NORMAL_MODE;
-    g->turn = g->nextNormalTurn;
+    g->turn = g->currNormalTurn;
+}
+
+void parlGame_moveToEndgame(ParlGame* const g)
+{
+    // Move Cabinet to PM's hand
+    g->knownHands[g->pmPosition] |= g->cabinet;
+    g->cabinet = PARL_EMPTY_STACK;
+
+    if(g->pmPosition == PARL_NO_PM)
+    {
+        g->mode = ENDGAME_MODE;
+        g->cycleStarter = PARL_NEXT_TURN(g);
+        g->endgameSkipPm = false;
+        parlGame_incTurn(g);
+    }
+    else
+    {
+        g->mode = PM_CHOOSE_FIRST_LAST_MODE;
+        g->turn = g->pmPosition;
+    }
 }
 
 bool parlGame_removeFromHand(ParlGame* const g, const ParlStack s)
@@ -733,7 +931,8 @@ void parlGame_confirmImpeachedMp(ParlGame* const g)
 {
     parlMoveCards(&g->discard, &g->parliament, PARL_CARD(g->impeachedMpIdx));
     g->parliament |= PARL_CARD(g->cardToBeatIdx);
-    parlGame_revertToNormalTurn(g);
+    parlGame_revertToNormalModeAndTurn(g);
+    parlGame_incTurn(g);
 }
 
 ParlCallingCardOrigin parlGame_cardOrigin(const ParlGame* const g, const ParlIdx i)

@@ -93,7 +93,7 @@ void printParlGame(const ParlGame* const g)
 
     printf("%i)", g->turn);
     if(g->mode != NORMAL_MODE && g->mode != DISCARD_AFTER_DRAW_MODE)
-        printf("->%i", g->nextNormalTurn);
+        printf("->%i", g->currNormalTurn);
     printf("/%i *%i %i", g->numPlayers, g->drawDeckSize, g->myPosition);
     printParlStack(g->knownHands[g->myPosition]);
     putchar('\n');
@@ -140,7 +140,6 @@ int main(void)
     parlGame_applyAction(&g, DRAW, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
     parlGame_applyAction(&g, SELF_DRAW, parlSymbolToIdx("6c"), PARL_NO_ARG, PARL_NO_ARG);
     parlGame_applyAction(&g, DRAW, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
-    printParlGame(&g);
     parlGame_applyAction(&g, CALL_ELECTION, parlSymbolToIdx("kd"), parlSymbolToIdx("9d"), parlSymbolToIdx("2d"));
     parlGame_applyAction(&g, NO_CONTEST_ELECTION, PARL_NO_ARG, PARL_NO_ARG, PARL_NO_ARG);
     parlGame_applyAction(&g, CONTEST_ELECTION, parlSymbolToIdx("kh"), parlSymbolToIdx("7h"), PARL_NO_ARG);

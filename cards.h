@@ -4,7 +4,7 @@
 
 /**
  * @file
- * @brief An API for performing operations on/with stacks of cards in games where all jokers are considered equivalent.
+ * @brief An API for performing operations on/with stacks of cards in Parliament.
  *
  * @details
  * This API is extremely fast compared to many other card libraries because it stores each deck of cards as a single
@@ -212,6 +212,11 @@ typedef enum
  * The symbol that represents a joker.
  */
 const ParlCardSymbol PARL_JOKER_SYMBOL;
+
+/**
+ * Coalition partners for each `ParlSuit`.
+ */
+const ParlSuit PARL_COALITION_PARTNERS[4];
 
 /**
  * @param s
